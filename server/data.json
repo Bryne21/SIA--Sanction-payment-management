@@ -1,0 +1,221 @@
+{
+  "members": [
+    {
+      "id": "M001",
+      "name": "Patricia Reyes",
+      "email": "patricia.reyes@org.edu",
+      "balance": 50,
+      "totalPaid": 150,
+      "standing": "Good Standing"
+    },
+    {
+      "id": "M002",
+      "name": "Jerome Alcantara",
+      "email": "jerome.alc@org.edu",
+      "balance": 200,
+      "totalPaid": 50,
+      "standing": "Not in Good Standing"
+    },
+    {
+      "id": "M003",
+      "name": "Kristine Santos",
+      "email": "kristine.s@org.edu",
+      "balance": 0,
+      "totalPaid": 300,
+      "standing": "Good Standing"
+    },
+    {
+      "id": "M004",
+      "name": "Mark Tolentino",
+      "email": "mark.t@org.edu",
+      "balance": 100,
+      "totalPaid": 100,
+      "standing": "Good Standing"
+    },
+    {
+      "id": "M005",
+      "name": "Janice dela Cruz",
+      "email": "janice.dc@org.edu",
+      "balance": 100,
+      "totalPaid": 100,
+      "standing": "Good Standing"
+    }
+  ],
+  "ledger": [
+    {
+      "id": "TX001",
+      "memberId": "M001",
+      "type": "fine",
+      "amount": 50,
+      "event": "Unexcused Absence - General Meeting",
+      "date": "2026-06-25 14:30",
+      "reference": ""
+    },
+    {
+      "id": "TX002",
+      "memberId": "M001",
+      "type": "fine",
+      "amount": 150,
+      "event": "Unexcused Absence - College Sports Fest",
+      "date": "2026-06-24 09:00",
+      "reference": ""
+    },
+    {
+      "id": "TX003",
+      "memberId": "M001",
+      "type": "payment",
+      "amount": 150,
+      "event": "Payment Received - Digital Receipt",
+      "date": "2026-06-25 16:00",
+      "reference": "REF-88390"
+    },
+    {
+      "id": "TX004",
+      "memberId": "M002",
+      "type": "fine",
+      "amount": 150,
+      "event": "Unexcused Absence - Foundation Day",
+      "date": "2026-06-23 08:30",
+      "reference": ""
+    },
+    {
+      "id": "TX005",
+      "memberId": "M002",
+      "type": "fine",
+      "amount": 100,
+      "event": "Unexcused Absence - Tech Seminar",
+      "date": "2026-06-22 13:00",
+      "reference": ""
+    },
+    {
+      "id": "TX006",
+      "memberId": "M002",
+      "type": "payment",
+      "amount": 50,
+      "event": "Payment Received - Cash",
+      "date": "2026-06-24 10:15",
+      "reference": "CASH-M002"
+    },
+    {
+      "id": "TX007",
+      "memberId": "M003",
+      "type": "fine",
+      "amount": 300,
+      "event": "Unexcused Absence - Leadership Camp",
+      "date": "2026-06-21 08:00",
+      "reference": ""
+    },
+    {
+      "id": "TX008",
+      "memberId": "M003",
+      "type": "payment",
+      "amount": 300,
+      "event": "Payment Received - Digital Receipt",
+      "date": "2026-06-22 11:30",
+      "reference": "REF-99210"
+    },
+    {
+      "id": "TX009",
+      "memberId": "M004",
+      "type": "fine",
+      "amount": 100,
+      "event": "Unexcused Absence - Committee Alignment",
+      "date": "2026-06-24 15:00",
+      "reference": ""
+    },
+    {
+      "id": "TX010",
+      "memberId": "M004",
+      "type": "fine",
+      "amount": 100,
+      "event": "Unexcused Absence - Midyear Assembly",
+      "date": "2026-06-20 10:00",
+      "reference": ""
+    },
+    {
+      "id": "TX011",
+      "memberId": "M004",
+      "type": "payment",
+      "amount": 100,
+      "event": "Payment Received - Cash",
+      "date": "2026-06-26 13:45",
+      "reference": "CASH-M004"
+    },
+    {
+      "id": "TX012",
+      "memberId": "M005",
+      "type": "fine",
+      "amount": 50,
+      "event": "Unexcused Absence - Meeting (Weekly General Assembly)",
+      "date": "2026-06-29 21:16",
+      "reference": ""
+    },
+    {
+      "id": "TX013",
+      "memberId": "M005",
+      "type": "fine",
+      "amount": 150,
+      "event": "Unexcused Absence - Special Event (Leadership Bootcamp)",
+      "date": "2026-06-29 21:16",
+      "reference": ""
+    },
+    {
+      "id": "TX014",
+      "memberId": "M005",
+      "type": "payment",
+      "amount": 100,
+      "event": "Payment Received - Cash",
+      "date": "2026-06-29 21:16",
+      "reference": "CASH-M005-3084"
+    }
+  ],
+  "rules": {
+    "meeting": 50,
+    "major_event": 100,
+    "special_event": 150
+  },
+  "auditLogs": [
+    {
+      "id": "A007",
+      "type": "payment_received",
+      "message": "Processed payment of ₱100 for Janice dela Cruz (Ref: CASH-M005-3084)",
+      "timestamp": "2026-06-29 21:16"
+    },
+    {
+      "id": "A006",
+      "type": "fine_generated",
+      "message": "Generated fine of ₱150 for Janice dela Cruz (Unexcused Absence - Special Event (Leadership Bootcamp))",
+      "timestamp": "2026-06-29 21:16"
+    },
+    {
+      "id": "A005",
+      "type": "fine_generated",
+      "message": "Generated fine of ₱50 for Janice dela Cruz (Unexcused Absence - Meeting (Weekly General Assembly))",
+      "timestamp": "2026-06-29 21:16"
+    },
+    {
+      "id": "A001",
+      "type": "payment_received",
+      "message": "Processed payment of ₱100 for Mark Tolentino (Ref: CASH-M004)",
+      "timestamp": "2026-06-26 13:45"
+    },
+    {
+      "id": "A002",
+      "type": "fine_generated",
+      "message": "Generated fine of ₱50 for Patricia Reyes (Unexcused Absence - General Meeting)",
+      "timestamp": "2026-06-25 14:30"
+    },
+    {
+      "id": "A003",
+      "type": "payment_received",
+      "message": "Processed payment of ₱150 for Patricia Reyes (Ref: REF-88390)",
+      "timestamp": "2026-06-25 16:00"
+    },
+    {
+      "id": "A004",
+      "type": "fine_generated",
+      "message": "Generated fine of ₱150 for Jerome Alcantara (Unexcused Absence - Foundation Day)",
+      "timestamp": "2026-06-23 08:30"
+    }
+  ]
+}
