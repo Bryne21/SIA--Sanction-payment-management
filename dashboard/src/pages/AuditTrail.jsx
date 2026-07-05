@@ -19,8 +19,8 @@ function AuditTrail({ auditLogs }) {
               sx={{ 
                 p: 2, 
                 borderRadius: 2, 
-                backgroundColor: 'rgba(255,255,255,0.015)', 
-                border: '1px solid rgba(255,255,255,0.04)',
+                backgroundColor: '#fafafa', 
+                border: '1px solid #eeeeee',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between'

@@ -25,7 +25,7 @@ function AttendanceTrigger({
 }) {
   return (
     <Container maxWidth="md" sx={{ animation: 'fadeIn 0.3s ease-out' }}>
-      <Card sx={{ border: '1px dashed #00f2fe', backgroundColor: 'rgba(0, 242, 254, 0.02)' }}>
+      <Card sx={{ border: '1px dashed #800000', backgroundColor: 'rgba(128, 0, 0, 0.02)', boxShadow: 'none' }}>
         <CardContent sx={{ p: 4 }}>
           <Typography variant="h5" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
             <span>⚡</span> Simulate Attendance Webhook
@@ -45,7 +45,7 @@ function AttendanceTrigger({
                 required
               >
                 {members.map(m => (
-                  <option key={m.id} value={m.id} style={{ backgroundColor: '#111524', color: '#fff', padding: 8 }}>
+                  <option key={m.id} value={m.id}>
                     {m.name} (Balance: ₱{m.balance} | Status: {m.standing})
                   </option>
                 ))}
@@ -60,9 +60,9 @@ function AttendanceTrigger({
                 label="2. Infraction Category (Selects Fine Rule)"
                 onChange={(e) => setSimEventType(e.target.value)}
               >
-                <option value="meeting" style={{ backgroundColor: '#111524', color: '#fff', padding: 8 }}>Meeting (₱{rules.meeting} Fine)</option>
-                <option value="major_event" style={{ backgroundColor: '#111524', color: '#fff', padding: 8 }}>Major Event (₱{rules.major_event} Fine)</option>
-                <option value="special_event" style={{ backgroundColor: '#111524', color: '#fff', padding: 8 }}>Special Event (₱{rules.special_event} Fine)</option>
+                <option value="meeting">Meeting (₱{rules.meeting} Fine)</option>
+                <option value="major_event">Major Event (₱{rules.major_event} Fine)</option>
+                <option value="special_event">Special Event (₱{rules.special_event} Fine)</option>
               </Select>
             </FormControl>
 
@@ -72,6 +72,14 @@ function AttendanceTrigger({
               placeholder="e.g. Weekly Assembly #4, Midterm Seminar"
               value={simCustomEventName}
               onChange={(e) => setSimCustomEventName(e.target.value)}
+              error={Boolean(simCustomEventName && (simCustomEventName.trim().length < 3 || simCustomEventName.trim().length > 100))}
+              helperText={
+                simCustomEventName && simCustomEventName.trim().length < 3
+                  ? "Description must be at least 3 characters long"
+                  : simCustomEventName && simCustomEventName.trim().length > 100
+                  ? "Description cannot exceed 100 characters"
+                  : ""
+              }
               required
               sx={{ mb: 4 }}
             />
@@ -82,7 +90,7 @@ function AttendanceTrigger({
               color="primary" 
               fullWidth 
               size="large"
-              sx={{ color: '#000', fontWeight: 'bold' }}
+              sx={{ color: '#fff', fontWeight: 'bold' }}
             >
               ⚡ Process Attendance Infraction & Assess Fine
             </Button>

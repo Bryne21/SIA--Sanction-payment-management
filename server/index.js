@@ -1,13 +1,122 @@
 const express = require('express');
 const cors = require('cors');
+const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
-const { connectDB } = require('./db');
 
-// Models
-const Member = require('./models/Member');
-const Ledger = require('./models/Ledger');
-const Rule = require('./models/Rule');
-const AuditLog = require('./models/AuditLog');
+// Schemas and Models
+const memberSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true }, // e.g. "M001"
+  name: { type: String, required: true },
+  email: { type: String, required: true },
+  balance: { type: Number, required: true, default: 0 },
+  totalPaid: { type: Number, required: true, default: 0 },
+  standing: { type: String, required: true, default: 'Good Standing' }
+});
+const Member = mongoose.models.Member || mongoose.model('Member', memberSchema);
+
+const ledgerSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true }, // e.g. "TX001"
+  memberId: { type: String, required: true }, // e.g. "M001"
+  type: { type: String, required: true, enum: ['fine', 'payment'] },
+  amount: { type: Number, required: true },
+  event: { type: String, required: true },
+  date: { type: String, required: true }, // YYYY-MM-DD HH:MM format
+  reference: { type: String, default: '' }
+});
+const Ledger = mongoose.models.Ledger || mongoose.model('Ledger', ledgerSchema);
+
+const ruleSchema = new mongoose.Schema({
+  meeting: { type: Number, required: true, default: 50 },
+  major_event: { type: Number, required: true, default: 100 },
+  special_event: { type: Number, required: true, default: 150 }
+});
+const Rule = mongoose.models.Rule || mongoose.model('Rule', ruleSchema);
+
+const auditLogSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true }, // e.g. "A001"
+  type: { type: String, required: true }, // e.g. "fine_generated", "payment_received", "rule_updated"
+  message: { type: String, required: true },
+  timestamp: { type: String, required: true }
+});
+const AuditLog = mongoose.models.AuditLog || mongoose.model('AuditLog', auditLogSchema);
+
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/sanction_payment';
+const DB_PATH = path.join(__dirname, 'data.json');
+
+const connectDB = async () => {
+  try {
+    await mongoose.connect(MONGODB_URI);
+    console.log('MongoDB Connected successfully to:', MONGODB_URI);
+    
+    // Run seed migration
+    await seedDataIfNeeded();
+  } catch (error) {
+    console.error('MongoDB connection failed:', error);
+    process.exit(1);
+  }
+};
+
+const seedDataIfNeeded = async () => {
+  try {
+    const memberCount = await Member.countDocuments();
+    const ledgerCount = await Ledger.countDocuments();
+    const ruleCount = await Rule.countDocuments();
+    const auditCount = await AuditLog.countDocuments();
+
+    // If database already contains data, skip seeding
+    if (memberCount > 0 || ledgerCount > 0 || ruleCount > 0 || auditCount > 0) {
+      console.log('Database already has data. Skipping migration.');
+      return;
+    }
+
+    // Check if data.json exists
+    if (!fs.existsSync(DB_PATH)) {
+      console.log('No local data.json file found to seed. Creating default rule.');
+      await Rule.create({ meeting: 50, major_event: 100, special_event: 150 });
+      return;
+    }
+
+    console.log('No data found in MongoDB. Starting migration from data.json...');
+    const rawData = fs.readFileSync(DB_PATH, 'utf-8');
+    const db = JSON.parse(rawData);
+
+    // Seeding members
+    if (db.members && db.members.length > 0) {
+      await Member.insertMany(db.members);
+      console.log(`Migrated ${db.members.length} members.`);
+    }
+
+    // Seeding ledger
+    if (db.ledger && db.ledger.length > 0) {
+      await Ledger.insertMany(db.ledger);
+      console.log(`Migrated ${db.ledger.length} ledger transactions.`);
+    }
+
+    // Seeding rules
+    if (db.rules) {
+      await Rule.create({
+        meeting: db.rules.meeting || 50,
+        major_event: db.rules.major_event || 100,
+        special_event: db.rules.special_event || 150
+      });
+      console.log('Migrated sanction rule settings.');
+    } else {
+      await Rule.create({ meeting: 50, major_event: 100, special_event: 150 });
+    }
+
+    // Seeding audit logs
+    if (db.auditLogs && db.auditLogs.length > 0) {
+      await AuditLog.insertMany(db.auditLogs);
+      console.log(`Migrated ${db.auditLogs.length} audit logs.`);
+    }
+
+    console.log('Database migration and seeding completed successfully!');
+  } catch (err) {
+    console.error('Error during data migration:', err);
+  }
+};
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -81,14 +190,30 @@ app.get('/api/state', async (req, res) => {
 // 2. Log Infraction (Log unexcused absence, assess fine, update status)
 app.post('/api/infraction', async (req, res) => {
   const { memberId, eventType, customEventName } = req.body;
+  
   if (!memberId || !eventType || !customEventName) {
-    return res.status(400).json({ error: 'Missing required parameters' });
+    return res.status(400).json({ error: 'Missing required parameters: memberId, eventType, and customEventName are required.' });
   }
 
+  if (typeof memberId !== 'string' || memberId.trim() === '') {
+    return res.status(400).json({ error: 'Invalid member ID.' });
+  }
+  
+  const validEventTypes = ['meeting', 'major_event', 'special_event'];
+  if (!validEventTypes.includes(eventType)) {
+    return res.status(400).json({ error: `Invalid event type. Must be one of: ${validEventTypes.join(', ')}` });
+  }
+
+  if (typeof customEventName !== 'string' || customEventName.trim().length < 3 || customEventName.trim().length > 100) {
+    return res.status(400).json({ error: 'Event description must be a string between 3 and 100 characters.' });
+  }
+
+  const trimmedEventName = customEventName.trim();
+
   try {
-    const member = await Member.findOne({ id: memberId });
+    const member = await Member.findOne({ id: memberId.trim() });
     if (!member) {
-      return res.status(404).json({ error: 'Member not found' });
+      return res.status(404).json({ error: 'Member not found.' });
     }
 
     let rulesDoc = await Rule.findOne();
@@ -98,7 +223,7 @@ app.post('/api/infraction', async (req, res) => {
 
     const fineAmount = rulesDoc[eventType] || 50;
     const eventLabel = eventType === "meeting" ? "Meeting" : eventType === "major_event" ? "Major Event" : "Special Event";
-    const eventName = `Unexcused Absence - ${eventLabel} (${customEventName})`;
+    const eventName = `Unexcused Absence - ${eventLabel} (${trimmedEventName})`;
     const txDate = getFormattedDate();
 
     // Update balance and standing
@@ -140,20 +265,35 @@ app.post('/api/infraction', async (req, res) => {
 // 3. Process payment
 app.post('/api/payment', async (req, res) => {
   const { memberId, amount, type, reference } = req.body;
-  const payAmt = parseFloat(amount);
 
-  if (!memberId || isNaN(payAmt) || payAmt <= 0 || !type) {
-    return res.status(400).json({ error: 'Invalid payload' });
+  if (!memberId || amount === undefined || !type) {
+    return res.status(400).json({ error: 'Missing required parameters: memberId, amount, and type are required.' });
+  }
+
+  const payAmt = parseFloat(amount);
+  if (isNaN(payAmt) || payAmt <= 0) {
+    return res.status(400).json({ error: 'Payment amount must be a positive number greater than 0.' });
+  }
+
+  const validTypes = ['cash', 'receipt'];
+  if (!validTypes.includes(type)) {
+    return res.status(400).json({ error: 'Payment type must be either "cash" or "receipt".' });
+  }
+
+  if (type === 'receipt') {
+    if (!reference || typeof reference !== 'string' || reference.trim().length < 5) {
+      return res.status(400).json({ error: 'Digital receipt payments require a reference code of at least 5 characters.' });
+    }
   }
 
   try {
-    const member = await Member.findOne({ id: memberId });
+    const member = await Member.findOne({ id: memberId.trim() });
     if (!member) {
-      return res.status(404).json({ error: 'Member not found' });
+      return res.status(404).json({ error: 'Member not found.' });
     }
 
     if (payAmt > member.balance) {
-      return res.status(400).json({ error: 'Payment exceeds outstanding balance' });
+      return res.status(400).json({ error: `Payment of ₱${payAmt} exceeds outstanding balance of ₱${member.balance}.` });
     }
 
     const txDate = getFormattedDate();
@@ -201,14 +341,38 @@ app.post('/api/payment', async (req, res) => {
 app.post('/api/rules', async (req, res) => {
   const { meeting, major_event, special_event } = req.body;
   
+  if (meeting === undefined && major_event === undefined && special_event === undefined) {
+    return res.status(400).json({ error: 'No rules values provided for update.' });
+  }
+
+  const validateRuleVal = (val, name) => {
+    if (val !== undefined) {
+      const num = Number(val);
+      if (!Number.isInteger(num) || num < 0 || num > 10000) {
+        throw new Error(`${name} fine must be a whole number between 0 and 10,000.`);
+      }
+      return num;
+    }
+    return undefined;
+  };
+
+  let parsedMeeting, parsedMajor, parsedSpecial;
+  try {
+    parsedMeeting = validateRuleVal(meeting, 'Meeting');
+    parsedMajor = validateRuleVal(major_event, 'Major Event');
+    parsedSpecial = validateRuleVal(special_event, 'Special Event');
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+
   try {
     let rulesDoc = await Rule.findOne();
     if (!rulesDoc) {
       rulesDoc = new Rule();
     }
-    if (meeting !== undefined) rulesDoc.meeting = parseInt(meeting) || 0;
-    if (major_event !== undefined) rulesDoc.major_event = parseInt(major_event) || 0;
-    if (special_event !== undefined) rulesDoc.special_event = parseInt(special_event) || 0;
+    if (parsedMeeting !== undefined) rulesDoc.meeting = parsedMeeting;
+    if (parsedMajor !== undefined) rulesDoc.major_event = parsedMajor;
+    if (parsedSpecial !== undefined) rulesDoc.special_event = parsedSpecial;
     await rulesDoc.save();
 
     const txDate = getFormattedDate();

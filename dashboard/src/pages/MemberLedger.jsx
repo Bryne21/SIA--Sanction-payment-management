@@ -66,13 +66,13 @@ function MemberLedger({
                 sx={{ mb: 2 }}
               />
 
-              <TableContainer component={Paper} sx={{ flexGrow: 1, maxHeight: 450, backgroundColor: 'transparent', backgroundImage: 'none', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <TableContainer component={Paper} sx={{ flexGrow: 1, maxHeight: 450, backgroundColor: 'transparent', backgroundImage: 'none', border: '1px solid #eeeeee' }}>
                 <Table stickyHeader>
                   <TableHead>
                     <TableRow>
-                      <TableCell style={{ backgroundColor: '#111524' }}>Member</TableCell>
-                      <TableCell style={{ backgroundColor: '#111524' }}>Outstanding</TableCell>
-                      <TableCell style={{ backgroundColor: '#111524' }}>Standing</TableCell>
+                      <TableCell style={{ backgroundColor: '#800000', color: '#ffffff' }}>Member</TableCell>
+                      <TableCell style={{ backgroundColor: '#800000', color: '#ffffff' }}>Outstanding</TableCell>
+                      <TableCell style={{ backgroundColor: '#800000', color: '#ffffff' }}>Standing</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -85,14 +85,14 @@ function MemberLedger({
                         sx={{ 
                           cursor: 'pointer',
                           '&.Mui-selected': {
-                            backgroundColor: 'rgba(0, 242, 254, 0.05)',
-                            borderLeft: '4px solid #00f2fe'
+                            backgroundColor: 'rgba(128, 0, 0, 0.05)',
+                            borderLeft: '4px solid #800000'
                           }
                         }}
                       >
                         <TableCell>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                            <Avatar sx={{ width: 32, height: 32, bgcolor: 'rgba(255,255,255,0.05)', color: 'primary.main', fontSize: '0.85rem' }}>
+                            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', color: '#ffffff', fontSize: '0.85rem' }}>
                               {m.name.split(' ').map(n=>n[0]).join('')}
                             </Avatar>
                             <Box>
@@ -131,7 +131,7 @@ function MemberLedger({
         {/* Right Side: Member Details Card */}
         <Grid item xs={12} md={5}>
           {selectedMember ? (
-            <Card sx={{ border: '1px solid rgba(0, 242, 254, 0.25)', boxShadow: '0 8px 32px 0 rgba(0, 242, 254, 0.05)' }}>
+            <Card sx={{ border: '1px solid rgba(128, 0, 0, 0.2)', boxShadow: 'none' }}>
               <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <Box>
@@ -152,7 +152,7 @@ function MemberLedger({
 
                 <Grid container spacing={2}>
                   <Grid item xs={6}>
-                    <Box sx={{ p: 2, borderRadius: 2, border: '1px solid rgba(255,255,255,0.04)', backgroundColor: 'rgba(255,255,255,0.01)' }}>
+                    <Box sx={{ p: 2, borderRadius: 2, border: '1px solid #eeeeee', backgroundColor: '#fafafa' }}>
                       <Typography variant="caption" color="text.secondary">Outstanding Dues</Typography>
                       <Typography variant="h6" color={selectedMember.balance > 0 ? "error.main" : "inherit"}>
                         ₱{selectedMember.balance}
@@ -160,7 +160,7 @@ function MemberLedger({
                     </Box>
                   </Grid>
                   <Grid item xs={6}>
-                    <Box sx={{ p: 2, borderRadius: 2, border: '1px solid rgba(255,255,255,0.04)', backgroundColor: 'rgba(255,255,255,0.01)' }}>
+                    <Box sx={{ p: 2, borderRadius: 2, border: '1px solid #eeeeee', backgroundColor: '#fafafa' }}>
                       <Typography variant="caption" color="text.secondary">Total Cleared Fines</Typography>
                       <Typography variant="h6" color="success.main">
                         ₱{selectedMember.totalPaid}
@@ -175,12 +175,12 @@ function MemberLedger({
                   fullWidth
                   onClick={() => setPaymentModalOpen(true)}
                   disabled={selectedMember.balance === 0}
-                  sx={{ color: '#000', fontWeight: 'bold' }}
+                  sx={{ color: '#fff', fontWeight: 'bold' }}
                 >
                   💳 Log Sanction Payment
                 </Button>
 
-                <Divider sx={{ borderColor: 'rgba(255,255,255,0.06)' }} />
+                <Divider />
 
                 <Box>
                   <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Transaction Ledger History</Typography>
@@ -191,8 +191,8 @@ function MemberLedger({
                         sx={{ 
                           p: 1.5, 
                           borderRadius: 2, 
-                          backgroundColor: 'rgba(255,255,255,0.02)',
-                          border: '1px solid rgba(255,255,255,0.04)',
+                          backgroundColor: '#fafafa',
+                          border: '1px solid #eeeeee',
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'flex-start'
@@ -243,8 +243,8 @@ function MemberLedger({
             sx: {
               borderRadius: 4,
               width: 450,
-              backgroundColor: '#0f1222',
-              border: '1px solid rgba(255,255,255,0.08)'
+              backgroundColor: '#ffffff',
+              border: '1px solid #eeeeee'
             }
           }}
         >
@@ -257,7 +257,7 @@ function MemberLedger({
                 <Typography variant="body1" fontWeight={600}>{selectedMember.name}</Typography>
               </Box>
 
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1.5, borderRadius: 2, border: '1px solid rgba(239, 68, 68, 0.15)', backgroundColor: 'rgba(239, 68, 68, 0.03)' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1.5, borderRadius: 2, border: '1px solid rgba(128, 0, 0, 0.15)', backgroundColor: 'rgba(128, 0, 0, 0.03)' }}>
                 <Typography variant="body2" color="text.secondary">Outstanding Dues:</Typography>
                 <Typography variant="body1" color="error.main" fontWeight={700}>₱{selectedMember.balance}</Typography>
               </Box>
@@ -268,7 +268,15 @@ function MemberLedger({
                 label="Payment Amount (₱)"
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(e.target.value)}
-                inputProps={{ min: 1, max: selectedMember.balance }}
+                inputProps={{ min: 1, max: selectedMember.balance, step: "any" }}
+                error={Boolean(paymentAmount && (parseFloat(paymentAmount) <= 0 || parseFloat(paymentAmount) > selectedMember.balance))}
+                helperText={
+                  paymentAmount && parseFloat(paymentAmount) > selectedMember.balance 
+                    ? `Cannot exceed outstanding balance of ₱${selectedMember.balance}`
+                    : paymentAmount && parseFloat(paymentAmount) <= 0
+                    ? "Amount must be a positive value"
+                    : ""
+                }
                 required
               />
 
@@ -280,8 +288,8 @@ function MemberLedger({
                   label="Payment Mode"
                   onChange={(e) => setPaymentType(e.target.value)}
                 >
-                  <option value="cash" style={{ backgroundColor: '#111524', color: '#fff', padding: 8 }}>Cash (Manual Invoice)</option>
-                  <option value="receipt" style={{ backgroundColor: '#111524', color: '#fff', padding: 8 }}>Digital Receipt Logging (G-Cash/Bank)</option>
+                  <option value="cash">Cash (Manual Invoice)</option>
+                  <option value="receipt">Digital Receipt Logging (G-Cash/Bank)</option>
                 </Select>
               </FormControl>
 
@@ -292,6 +300,12 @@ function MemberLedger({
                   placeholder="e.g. REF-12984920"
                   value={receiptRef}
                   onChange={(e) => setReceiptRef(e.target.value)}
+                  error={Boolean(paymentType === 'receipt' && receiptRef && receiptRef.trim().length < 5)}
+                  helperText={
+                    paymentType === 'receipt' && receiptRef && receiptRef.trim().length < 5
+                      ? "Reference code must be at least 5 characters long"
+                      : ""
+                  }
                   required
                 />
               )}
@@ -299,7 +313,7 @@ function MemberLedger({
             </DialogContent>
             <DialogActions sx={{ p: 3 }}>
               <Button onClick={() => setPaymentModalOpen(false)} color="inherit">Cancel</Button>
-              <Button type="submit" variant="contained" color="primary" sx={{ color: '#000' }}>Confirm Payment</Button>
+              <Button type="submit" variant="contained" color="primary" sx={{ color: '#fff' }}>Confirm Payment</Button>
             </DialogActions>
           </form>
         </Dialog>

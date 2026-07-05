@@ -21,50 +21,47 @@ import {
 } from '@mui/material';
 
 // Import Pages
-import Dashboard from './pages/Dashboard';
 import AttendanceTrigger from './pages/AttendanceTrigger';
 import MemberLedger from './pages/MemberLedger';
 import SanctionRules from './pages/SanctionRules';
 import AuditTrail from './pages/AuditTrail';
 
-const darkTheme = createTheme({
+const theme = createTheme({
   palette: {
-    mode: 'dark',
-    primary: { main: '#00f2fe' },
-    secondary: { main: '#4facfe' },
-    background: { default: '#0a0c14', paper: '#111524' },
-    text: { primary: '#f8fafc', secondary: '#94a3b8' },
-    error: { main: '#f87171' },
-    success: { main: '#34d399' },
-    warning: { main: '#fbbf24' }
+    mode: 'light',
+    primary: { main: '#800000' }, // Maroon
+    secondary: { main: '#800000' },
+    background: { default: '#ffffff', paper: '#fcfcfc' },
+    text: { primary: '#1a1a1a', secondary: '#555555' },
+    error: { main: '#800000' },
+    success: { main: '#2e7d32' },
+    warning: { main: '#ed6c02' }
   },
   typography: {
     fontFamily: '"Inter", "Outfit", sans-serif',
-    h4: { fontFamily: '"Outfit", sans-serif', fontWeight: 700, letterSpacing: '-0.5px' },
-    h6: { fontFamily: '"Outfit", sans-serif', fontWeight: 600 }
+    h4: { fontFamily: '"Outfit", sans-serif', fontWeight: 700, letterSpacing: '-0.5px', color: '#800000' },
+    h6: { fontFamily: '"Outfit", sans-serif', fontWeight: 600, color: '#800000' }
   },
   components: {
     MuiCard: {
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-          backgroundColor: 'rgba(22, 28, 45, 0.65)',
-          backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          borderRadius: 16,
-          boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          backgroundColor: '#ffffff',
+          border: '1px solid #eeeeee',
+          borderRadius: 12,
+          boxShadow: 'none',
+          transition: 'all 0.2s ease',
           '&:hover': {
-            borderColor: 'rgba(0, 242, 254, 0.25)',
-            transform: 'translateY(-2px)',
-            backgroundColor: 'rgba(28, 36, 58, 0.8)',
+            borderColor: '#800000',
+            backgroundColor: '#fffdfd',
           }
         }
       }
     },
     MuiButton: {
       styleOverrides: {
-        root: { borderRadius: 10, fontWeight: 600, textTransform: 'none', padding: '8px 20px' }
+        root: { borderRadius: 8, fontWeight: 600, textTransform: 'none', padding: '8px 20px' }
       }
     }
   }
@@ -79,7 +76,7 @@ function App() {
   const [rules, setRules] = useState({ meeting: 50, major_event: 100, special_event: 150 });
   const [auditLogs, setAuditLogs] = useState([]);
 
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = useState("ledger");
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -121,19 +118,7 @@ function App() {
     setTimeout(() => setNotification(prev => ({ ...prev, open: false })), 4000);
   };
 
-  const stats = useMemo(() => {
-    let totalOutstanding = 0;
-    let totalCollected = 0;
-    let badStandingCount = 0;
-    members.forEach(m => {
-      totalOutstanding += m.balance;
-      totalCollected += m.totalPaid;
-      if (m.standing === "Not in Good Standing") badStandingCount++;
-    });
-    const totalFines = totalOutstanding + totalCollected;
-    const rate = totalFines > 0 ? ((totalCollected / totalFines) * 100).toFixed(1) : "0.0";
-    return { totalOutstanding, totalCollected, totalFines, rate, badStandingCount };
-  }, [members]);
+
 
   const selectedMember = useMemo(() => members.find(m => m.id === selectedMemberId), [members, selectedMemberId]);
   const selectedMemberHistory = useMemo(() => {
@@ -148,25 +133,19 @@ function App() {
     );
   }, [members, searchQuery]);
 
-  const chartData = useMemo(() => {
-    let meetingSum = 0, majorSum = 0, specialSum = 0;
-    ledger.forEach(tx => {
-      if (tx.type === 'fine') {
-        if (tx.event.includes('Meeting')) meetingSum += tx.amount;
-        else if (tx.event.includes('Major Event') || tx.event.includes('Assembly') || tx.event.includes('Sports') || tx.event.includes('Foundation')) majorSum += tx.amount;
-        else specialSum += tx.amount;
-      }
-    });
-    return [
-      { label: 'Meetings', val: meetingSum },
-      { label: 'Major Events', val: majorSum },
-      { label: 'Special Events', val: specialSum }
-    ];
-  }, [ledger]);
+
 
   const handleTriggerAbsence = (e) => {
     e.preventDefault();
-    if (!simMemberId) return;
+    if (!simMemberId) {
+      showToast("Please select an absent member.", "error");
+      return;
+    }
+    if (!simCustomEventName || simCustomEventName.trim().length < 3 || simCustomEventName.trim().length > 100) {
+      showToast("Event description must be between 3 and 100 characters.", "error");
+      return;
+    }
+
     axios.post('/api/infraction', { memberId: simMemberId, eventType: simEventType, customEventName: simCustomEventName })
       .then(res => {
         setMembers(res.data.members);
@@ -177,13 +156,31 @@ function App() {
         showToast("Assessed absence fine successfully");
         setActiveTab("ledger");
       })
-      .catch(() => showToast("Failed to process infraction", "error"));
+      .catch(err => showToast(err.response?.data?.error || "Failed to process infraction", "error"));
   };
 
   const handleProcessPaymentSubmit = (e) => {
     e.preventDefault();
     const amt = parseFloat(paymentAmount);
-    if (isNaN(amt) || amt <= 0 || !selectedMember) return;
+    if (!selectedMember) {
+      showToast("No member selected.", "error");
+      return;
+    }
+    if (isNaN(amt) || amt <= 0) {
+      showToast("Payment amount must be a positive number greater than 0.", "error");
+      return;
+    }
+    if (amt > selectedMember.balance) {
+      showToast(`Payment amount exceeds member's outstanding balance of ₱${selectedMember.balance}.`, "error");
+      return;
+    }
+    if (paymentType === 'receipt') {
+      if (!receiptRef || receiptRef.trim().length < 5) {
+        showToast("Digital receipt payments require a reference code of at least 5 characters.", "error");
+        return;
+      }
+    }
+
     axios.post('/api/payment', { memberId: selectedMember.id, amount: amt, type: paymentType, reference: receiptRef })
       .then(res => {
         setMembers(res.data.members);
@@ -198,18 +195,23 @@ function App() {
   };
 
   const handleUpdateRules = (type, val) => {
-    const parsedVal = parseInt(val) || 0;
-    axios.post('/api/rules', { ...rules, [type]: parsedVal })
+    const num = Number(val);
+    if (!Number.isInteger(num) || num < 0 || num > 10000) {
+      showToast("Rules value must be a whole number between 0 and 10,000.", "error");
+      return;
+    }
+
+    axios.post('/api/rules', { ...rules, [type]: num })
       .then(res => {
         setRules(res.data.rules);
         setAuditLogs(res.data.auditLogs);
         showToast("Rules updated successfully");
       })
-      .catch(() => showToast("Failed to update rules", "error"));
+      .catch(err => showToast(err.response?.data?.error || "Failed to update rules", "error"));
   };
 
   return (
-    <ThemeProvider theme={darkTheme}>
+    <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box sx={{ display: 'flex', minHeight: '100vh' }}>
         <Drawer
@@ -220,24 +222,23 @@ function App() {
             [`& .MuiDrawer-paper`]: { 
               width: drawerWidth, 
               boxSizing: 'border-box', 
-              backgroundColor: '#0f1222',
-              borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+              backgroundColor: '#ffffff',
+              borderRight: '1px solid #eeeeee',
               padding: '24px 16px'
             },
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 5 }}>
-            <Avatar sx={{ bgcolor: 'primary.main', color: '#000', fontWeight: 800 }}>₱</Avatar>
-            <Typography variant="h6" sx={{ fontWeight: 800, background: 'linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            <Avatar sx={{ bgcolor: 'primary.main', color: '#fff', fontWeight: 800 }}>₱</Avatar>
+            <Typography variant="h6" sx={{ fontWeight: 800, color: 'primary.main' }}>
               SanctionPay
             </Typography>
           </Box>
 
           <List sx={{ flexGrow: 1 }}>
             {[
-              { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-              { id: 'simulator', label: 'Attendance Trigger', icon: '⚡' },
               { id: 'ledger', label: 'Member Ledger', icon: '📂' },
+              { id: 'simulator', label: 'Attendance Trigger', icon: '⚡' },
               { id: 'rules', label: 'Sanction Rules', icon: '⚙️' },
               { id: 'audit', label: 'Audit Trail', icon: '📜' },
             ].map((item) => (
@@ -248,7 +249,7 @@ function App() {
                   sx={{
                     borderRadius: '12px',
                     color: activeTab === item.id ? 'primary.main' : 'text.secondary',
-                    '&.Mui-selected': { backgroundColor: 'rgba(0, 242, 254, 0.08)' }
+                    '&.Mui-selected': { backgroundColor: 'rgba(128, 0, 0, 0.08)' }
                   }}
                 >
                   <ListItemIcon sx={{ minWidth: 40, fontSize: '1.25rem' }}>{item.icon}</ListItemIcon>
@@ -258,9 +259,9 @@ function App() {
             ))}
           </List>
 
-          <Divider sx={{ my: 2, borderColor: 'rgba(255,255,255,0.06)' }} />
+          <Divider sx={{ my: 2, borderColor: '#eeeeee' }} />
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Avatar sx={{ border: '2px solid #4facfe' }}>AD</Avatar>
+            <Avatar sx={{ bgcolor: 'primary.main', color: '#fff' }}>AD</Avatar>
             <Box>
               <Typography variant="body2" sx={{ fontWeight: 600 }}>Alex Diaz</Typography>
               <Typography variant="caption" color="text.secondary">Sanction Manager</Typography>
@@ -273,14 +274,13 @@ function App() {
             <Toolbar sx={{ justifyContent: 'space-between', p: '0 !important' }}>
               <Box>
                 <Typography variant="h4" sx={{ mb: 0.5 }}>
-                  {activeTab === 'dashboard' && "Dashboard Overview"}
                   {activeTab === 'simulator' && "Attendance Trigger Simulator"}
                   {activeTab === 'ledger' && "Member Financial Ledger"}
                   {activeTab === 'rules' && "Sanction Policy & Rules"}
                   {activeTab === 'audit' && "Audit Ledger Trail"}
                 </Typography>
               </Box>
-              <Button variant="contained" color="primary" onClick={() => setActiveTab("simulator")} startIcon={<span>⚡</span>} sx={{ color: '#000' }}>
+              <Button variant="contained" color="primary" onClick={() => setActiveTab("simulator")} startIcon={<span>⚡</span>} sx={{ color: '#fff' }}>
                 Simulate Infraction
               </Button>
             </Toolbar>
@@ -292,9 +292,7 @@ function App() {
             </Alert>
           )}
 
-          {activeTab === 'dashboard' && (
-            <Dashboard stats={stats} chartData={chartData} auditLogs={auditLogs} setActiveTab={setActiveTab} />
-          )}
+
           {activeTab === 'simulator' && (
             <AttendanceTrigger 
               members={members} 
