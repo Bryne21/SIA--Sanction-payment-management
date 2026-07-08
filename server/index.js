@@ -34,13 +34,7 @@ const ruleSchema = new mongoose.Schema({
 });
 const Rule = mongoose.models.Rule || mongoose.model('Rule', ruleSchema);
 
-const auditLogSchema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true }, // e.g. "A001"
-  type: { type: String, required: true }, // e.g. "fine_generated", "payment_received", "rule_updated"
-  message: { type: String, required: true },
-  timestamp: { type: String, required: true }
-});
-const AuditLog = mongoose.models.AuditLog || mongoose.model('AuditLog', auditLogSchema);
+
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/sanction_payment';
 const DB_PATH = path.join(__dirname, 'data.json');
@@ -63,10 +57,8 @@ const seedDataIfNeeded = async () => {
     const memberCount = await Member.countDocuments();
     const ledgerCount = await Ledger.countDocuments();
     const ruleCount = await Rule.countDocuments();
-    const auditCount = await AuditLog.countDocuments();
-
     // If database already contains data, skip seeding
-    if (memberCount > 0 || ledgerCount > 0 || ruleCount > 0 || auditCount > 0) {
+    if (memberCount > 0 || ledgerCount > 0 || ruleCount > 0) {
       console.log('Database already has data. Skipping migration.');
       return;
     }
@@ -106,11 +98,7 @@ const seedDataIfNeeded = async () => {
       await Rule.create({ meeting: 50, major_event: 100, special_event: 150 });
     }
 
-    // Seeding audit logs
-    if (db.auditLogs && db.auditLogs.length > 0) {
-      await AuditLog.insertMany(db.auditLogs);
-      console.log(`Migrated ${db.auditLogs.length} audit logs.`);
-    }
+
 
     console.log('Database migration and seeding completed successfully!');
   } catch (err) {
@@ -140,13 +128,7 @@ const getNextTxId = async () => {
   return `TX${String(num + 1).padStart(3, '0')}`;
 };
 
-// Helper to get next AuditLog ID in format A###
-const getNextAuditId = async () => {
-  const lastAudit = await AuditLog.findOne({ id: /^A\d+$/ }).sort({ id: -1 });
-  if (!lastAudit) return 'A001';
-  const num = parseInt(lastAudit.id.replace('A', '')) || 0;
-  return `A${String(num + 1).padStart(3, '0')}`;
-};
+
 
 // Helper to get current state
 const getState = async () => {
@@ -156,8 +138,6 @@ const getState = async () => {
   if (!rulesDoc) {
     rulesDoc = { meeting: 50, major_event: 100, special_event: 150 };
   }
-  const auditLogs = await AuditLog.find().sort({ _id: -1 }).lean();
-  
   // Strip mongoose private keys (_id and __v) for pristine frontend compatibility
   const cleanMembers = members.map(({ _id, __v, ...m }) => m);
   const cleanLedger = ledger.map(({ _id, __v, ...l }) => l);
@@ -166,13 +146,11 @@ const getState = async () => {
     major_event: rulesDoc.major_event,
     special_event: rulesDoc.special_event
   };
-  const cleanAuditLogs = auditLogs.map(({ _id, __v, ...a }) => a);
 
   return {
     members: cleanMembers,
     ledger: cleanLedger,
-    rules: cleanRules,
-    auditLogs: cleanAuditLogs
+    rules: cleanRules
   };
 };
 
@@ -245,14 +223,7 @@ app.post('/api/infraction', async (req, res) => {
       reference: ''
     });
 
-    // Create audit log
-    const newAuditId = await getNextAuditId();
-    await AuditLog.create({
-      id: newAuditId,
-      type: 'fine_generated',
-      message: `Generated fine of ₱${fineAmount} for ${member.name} (${eventName})`,
-      timestamp: txDate
-    });
+
 
     const state = await getState();
     res.json(state);
@@ -320,14 +291,7 @@ app.post('/api/payment', async (req, res) => {
       reference: refCode
     });
 
-    // Add audit log
-    const newAuditId = await getNextAuditId();
-    await AuditLog.create({
-      id: newAuditId,
-      type: 'payment_received',
-      message: `Processed payment of ₱${payAmt} for ${member.name} (Ref: ${refCode})`,
-      timestamp: txDate
-    });
+
 
     const state = await getState();
     res.json(state);
@@ -375,14 +339,7 @@ app.post('/api/rules', async (req, res) => {
     if (parsedSpecial !== undefined) rulesDoc.special_event = parsedSpecial;
     await rulesDoc.save();
 
-    const txDate = getFormattedDate();
-    const newAuditId = await getNextAuditId();
-    await AuditLog.create({
-      id: newAuditId,
-      type: 'rule_updated',
-      message: `Updated sanction fine amount rules - Meeting: ₱${rulesDoc.meeting}, Major Event: ₱${rulesDoc.major_event}, Special Event: ₱${rulesDoc.special_event}`,
-      timestamp: txDate
-    });
+
 
     const state = await getState();
     res.json(state);

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Box, 
   Grid, 
@@ -24,7 +24,10 @@ import {
   DialogActions, 
   FormControl, 
   InputLabel, 
-  Select 
+  Select,
+  FormControlLabel,
+  Switch,
+  MenuItem
 } from '@mui/material';
 
 function MemberLedger({
@@ -47,6 +50,8 @@ function MemberLedger({
   selectedMember,
   selectedMemberHistory
 }) {
+  const [showZeroBalance, setShowZeroBalance] = useState(false);
+  const displayedMembers = members.filter(m => showZeroBalance || m.balance > 0);
   return (
     <Box sx={{ animation: 'fadeIn 0.3s ease-out' }}>
       <Grid container spacing={3}>
@@ -63,7 +68,21 @@ function MemberLedger({
                 label="Search members, IDs, status..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                sx={{ mb: 2 }}
+                sx={{ mb: 1 }}
+              />
+
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={showZeroBalance}
+                    onChange={(e) => setShowZeroBalance(e.target.checked)}
+                    color="primary"
+                    size="small"
+                  />
+                }
+                label="Show members with zero balance"
+                componentsProps={{ typography: { variant: 'caption', color: 'text.secondary' } }}
+                sx={{ mb: 2, ml: 0.5 }}
               />
 
               <TableContainer component={Paper} sx={{ flexGrow: 1, maxHeight: 450, backgroundColor: 'transparent', backgroundImage: 'none', border: '1px solid #eeeeee' }}>
@@ -76,7 +95,7 @@ function MemberLedger({
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {members.map((m) => (
+                    {displayedMembers.map((m) => (
                       <TableRow 
                         key={m.id}
                         hover
@@ -288,8 +307,8 @@ function MemberLedger({
                   label="Payment Mode"
                   onChange={(e) => setPaymentType(e.target.value)}
                 >
-                  <option value="cash">Cash (Manual Invoice)</option>
-                  <option value="receipt">Digital Receipt Logging (G-Cash/Bank)</option>
+                  <MenuItem value="cash">Cash (Manual Invoice)</MenuItem>
+                  <MenuItem value="receipt">Digital Receipt Logging (G-Cash/Bank)</MenuItem>
                 </Select>
               </FormControl>
 

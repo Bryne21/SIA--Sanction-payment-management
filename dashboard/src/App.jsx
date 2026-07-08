@@ -24,7 +24,7 @@ import {
 import AttendanceTrigger from './pages/AttendanceTrigger';
 import MemberLedger from './pages/MemberLedger';
 import SanctionRules from './pages/SanctionRules';
-import AuditTrail from './pages/AuditTrail';
+
 
 const theme = createTheme({
   palette: {
@@ -74,7 +74,7 @@ function App() {
   const [members, setMembers] = useState([]);
   const [ledger, setLedger] = useState([]);
   const [rules, setRules] = useState({ meeting: 50, major_event: 100, special_event: 150 });
-  const [auditLogs, setAuditLogs] = useState([]);
+
 
   const [activeTab, setActiveTab] = useState("ledger");
   const [selectedMemberId, setSelectedMemberId] = useState("");
@@ -97,7 +97,7 @@ function App() {
         setMembers(res.data.members || []);
         setLedger(res.data.ledger || []);
         setRules(res.data.rules || { meeting: 50, major_event: 100, special_event: 150 });
-        setAuditLogs(res.data.auditLogs || []);
+
         if (res.data.members && res.data.members.length > 0) {
           if (!selectedMemberId) setSelectedMemberId(res.data.members[0].id);
           if (!simMemberId) setSimMemberId(res.data.members[0].id);
@@ -150,7 +150,7 @@ function App() {
       .then(res => {
         setMembers(res.data.members);
         setLedger(res.data.ledger);
-        setAuditLogs(res.data.auditLogs);
+
         setSelectedMemberId(simMemberId);
         setSimCustomEventName("");
         showToast("Assessed absence fine successfully");
@@ -185,7 +185,7 @@ function App() {
       .then(res => {
         setMembers(res.data.members);
         setLedger(res.data.ledger);
-        setAuditLogs(res.data.auditLogs);
+
         setPaymentModalOpen(false);
         setPaymentAmount("");
         setReceiptRef("");
@@ -204,7 +204,7 @@ function App() {
     axios.post('/api/rules', { ...rules, [type]: num })
       .then(res => {
         setRules(res.data.rules);
-        setAuditLogs(res.data.auditLogs);
+
         showToast("Rules updated successfully");
       })
       .catch(err => showToast(err.response?.data?.error || "Failed to update rules", "error"));
@@ -238,9 +238,8 @@ function App() {
           <List sx={{ flexGrow: 1 }}>
             {[
               { id: 'ledger', label: 'Member Ledger', icon: '📂' },
-              { id: 'simulator', label: 'Attendance Trigger', icon: '⚡' },
+              { id: 'simulator', label: 'Record Absences', icon: '⚡' },
               { id: 'rules', label: 'Sanction Rules', icon: '⚙️' },
-              { id: 'audit', label: 'Audit Trail', icon: '📜' },
             ].map((item) => (
               <ListItem key={item.id} disablePadding sx={{ mb: 0.5 }}>
                 <ListItemButton 
@@ -274,14 +273,13 @@ function App() {
             <Toolbar sx={{ justifyContent: 'space-between', p: '0 !important' }}>
               <Box>
                 <Typography variant="h4" sx={{ mb: 0.5 }}>
-                  {activeTab === 'simulator' && "Attendance Trigger Simulator"}
+                  {activeTab === 'simulator' && "Record Member Absences"}
                   {activeTab === 'ledger' && "Member Financial Ledger"}
                   {activeTab === 'rules' && "Sanction Policy & Rules"}
-                  {activeTab === 'audit' && "Audit Ledger Trail"}
                 </Typography>
               </Box>
               <Button variant="contained" color="primary" onClick={() => setActiveTab("simulator")} startIcon={<span>⚡</span>} sx={{ color: '#fff' }}>
-                Simulate Infraction
+                Record Absence
               </Button>
             </Toolbar>
           </AppBar>
@@ -331,9 +329,7 @@ function App() {
           {activeTab === 'rules' && (
             <SanctionRules rules={rules} handleUpdateRules={handleUpdateRules} />
           )}
-          {activeTab === 'audit' && (
-            <AuditTrail auditLogs={auditLogs} />
-          )}
+
         </Box>
       </Box>
     </ThemeProvider>
