@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: sanction-backend
+    runtime: node
+    buildCommand: cd server && npm install
+    startCommand: cd server && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        fromPort: true
+      - key: MONGODB_URI
+        # IMPORTANT: Replace with your MongoDB Atlas connection string
+        # Format: mongodb+srv://username:password@cluster.mongodb.net/sanction_payment?retryWrites=true&w=majority
+        # Get this from MongoDB Atlas dashboard
+        sync: false
+
+  - type: static
+    name: sanction-dashboard
+    buildCommand: cd dashboard && npm install && npm run build
+    staticPublishPath: dashboard/dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        # Set to your backend service URL (e.g., https://sanction-backend.onrender.com)
+        sync: false
+

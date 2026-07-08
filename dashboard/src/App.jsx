@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
 import { 
   ThemeProvider, 
   createTheme, 
@@ -19,6 +18,7 @@ import {
   Button, 
   Alert
 } from '@mui/material';
+import { getState, logInfraction, processPayment, updateRules } from './api/client';
 
 // Import Pages
 import AttendanceTrigger from './pages/AttendanceTrigger';
@@ -92,7 +92,7 @@ function App() {
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
 
   const syncState = () => {
-    axios.get('/api/state')
+    getState()
       .then(res => {
         setMembers(res.data.members || []);
         setLedger(res.data.ledger || []);
@@ -146,7 +146,7 @@ function App() {
       return;
     }
 
-    axios.post('/api/infraction', { memberId: simMemberId, eventType: simEventType, customEventName: simCustomEventName })
+    logInfraction(simMemberId, simEventType, simCustomEventName)
       .then(res => {
         setMembers(res.data.members);
         setLedger(res.data.ledger);
@@ -181,7 +181,7 @@ function App() {
       }
     }
 
-    axios.post('/api/payment', { memberId: selectedMember.id, amount: amt, type: paymentType, reference: receiptRef })
+    processPayment(selectedMember.id, amt, paymentType, receiptRef)
       .then(res => {
         setMembers(res.data.members);
         setLedger(res.data.ledger);
@@ -201,7 +201,7 @@ function App() {
       return;
     }
 
-    axios.post('/api/rules', { ...rules, [type]: num })
+    updateRules(type === 'meeting' ? num : rules.meeting, type === 'major_event' ? num : rules.major_event, type === 'special_event' ? num : rules.special_event)
       .then(res => {
         setRules(res.data.rules);
 

@@ -48,7 +48,7 @@ const connectDB = async () => {
     await seedDataIfNeeded();
   } catch (error) {
     console.error('MongoDB connection failed:', error);
-    process.exit(1);
+    console.warn('Warning: Server keeps running but database actions will fail.');
   }
 };
 
@@ -350,8 +350,8 @@ app.post('/api/rules', async (req, res) => {
 });
 
 // Start server immediately to prevent Render port scan timeout
-app.listen(PORT, () => {
-  console.log(`Express Sanction Backend running at http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Express Sanction Backend running on port ${PORT}`);
 });
 
 // Connect to database in the background
