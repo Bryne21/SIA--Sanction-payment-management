@@ -107,7 +107,7 @@ const seedDataIfNeeded = async () => {
 };
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 const STANDING_THRESHOLD = 150;
 
 app.use(cors());
@@ -349,9 +349,10 @@ app.post('/api/rules', async (req, res) => {
   }
 });
 
-// Connect to database then start server
-connectDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Express Sanction Backend running at http://localhost:${PORT}`);
-  });
+// Start server immediately to prevent Render port scan timeout
+app.listen(PORT, () => {
+  console.log(`Express Sanction Backend running at http://localhost:${PORT}`);
 });
+
+// Connect to database in the background
+connectDB();
