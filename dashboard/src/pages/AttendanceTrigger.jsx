@@ -84,8 +84,8 @@ function AttendanceTrigger({
             sx={{ mb: 3 }}
           />
 
-          <TableContainer component={Paper} sx={{ maxHeight: 400, boxShadow: 'none', border: '1px solid #eeeeee' }}>
-            <Table stickyHeader>
+          <TableContainer component={Paper} sx={{ maxHeight: { xs: 320, md: 400 }, overflowX: 'auto', boxShadow: 'none', border: '1px solid #eeeeee' }}>
+            <Table stickyHeader sx={{ minWidth: { xs: 340, md: 'auto' } }}>
               <TableHead>
                 <TableRow>
                   <TableCell style={{ backgroundColor: '#800000', color: '#ffffff' }}>Member</TableCell>
@@ -139,7 +139,8 @@ function AttendanceTrigger({
           PaperProps={{
             sx: {
               borderRadius: 4,
-              width: 450,
+              width: { xs: '95%', sm: 450 },
+              maxWidth: '95vw',
               backgroundColor: '#ffffff',
               border: '1px solid #eeeeee'
             }

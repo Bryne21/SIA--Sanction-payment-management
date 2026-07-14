@@ -20,7 +20,7 @@ function SanctionRules({ rules, handleUpdateRules }) {
           </Typography>
 
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, borderRadius: 2, border: '1px solid #eeeeee', backgroundColor: '#fafafa' }}>
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'stretch', md: 'center' }, gap: 2, p: 2, borderRadius: 2, border: '1px solid #eeeeee', backgroundColor: '#fafafa' }}>
               <Box>
                 <Typography variant="body1" fontWeight={600}>Organization Meetings</Typography>
                 <Typography variant="caption" color="text.secondary">Evaluated on general or committee alignments.</Typography>
@@ -43,7 +43,7 @@ function SanctionRules({ rules, handleUpdateRules }) {
               />
             </Box>
 
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, borderRadius: 2, border: '1px solid #eeeeee', backgroundColor: '#fafafa' }}>
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'stretch', md: 'center' }, gap: 2, p: 2, borderRadius: 2, border: '1px solid #eeeeee', backgroundColor: '#fafafa' }}>
               <Box>
                 <Typography variant="body1" fontWeight={600}>Major Events</Typography>
                 <Typography variant="caption" color="text.secondary">Evaluated on general assemblies and college elections.</Typography>
@@ -62,11 +62,11 @@ function SanctionRules({ rules, handleUpdateRules }) {
                     : ""
                 }
                 InputProps={{ startAdornment: <Typography variant="body2" sx={{ mr: 0.5, color: 'text.secondary' }}>₱</Typography> }}
-                sx={{ width: 120 }}
+                sx={{ width: { xs: '100%', md: 120 } }}
               />
             </Box>
 
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, borderRadius: 2, border: '1px solid #eeeeee', backgroundColor: '#fafafa' }}>
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'stretch', md: 'center' }, gap: 2, p: 2, borderRadius: 2, border: '1px solid #eeeeee', backgroundColor: '#fafafa' }}>
               <Box>
                 <Typography variant="body1" fontWeight={600}>Special Events</Typography>
                 <Typography variant="caption" color="text.secondary">Evaluated on leadership training camps or seminars.</Typography>
@@ -85,7 +85,7 @@ function SanctionRules({ rules, handleUpdateRules }) {
                     : ""
                 }
                 InputProps={{ startAdornment: <Typography variant="body2" sx={{ mr: 0.5, color: 'text.secondary' }}>₱</Typography> }}
-                sx={{ width: 120 }}
+                sx={{ width: { xs: '100%', md: 120 } }}
               />
             </Box>
           </Box>

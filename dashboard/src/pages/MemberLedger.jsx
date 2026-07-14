@@ -85,8 +85,8 @@ function MemberLedger({
                 sx={{ mb: 2, ml: 0.5 }}
               />
 
-              <TableContainer component={Paper} sx={{ flexGrow: 1, maxHeight: 450, backgroundColor: 'transparent', backgroundImage: 'none', border: '1px solid #eeeeee' }}>
-                <Table stickyHeader>
+              <TableContainer component={Paper} sx={{ flexGrow: 1, maxHeight: { xs: 360, md: 450 }, overflowX: 'auto', backgroundColor: 'transparent', backgroundImage: 'none', border: '1px solid #eeeeee' }}>
+                <Table stickyHeader sx={{ minWidth: { xs: 420, md: 'auto' } }}>
                   <TableHead>
                     <TableRow>
                       <TableCell style={{ backgroundColor: '#800000', color: '#ffffff' }}>Member</TableCell>
@@ -170,7 +170,7 @@ function MemberLedger({
                 )}
 
                 <Grid container spacing={2}>
-                  <Grid item xs={6}>
+                  <Grid item xs={12} sm={6}>
                     <Box sx={{ p: 2, borderRadius: 2, border: '1px solid #eeeeee', backgroundColor: '#fafafa' }}>
                       <Typography variant="caption" color="text.secondary">Outstanding Dues</Typography>
                       <Typography variant="h6" color={selectedMember.balance > 0 ? "error.main" : "inherit"}>

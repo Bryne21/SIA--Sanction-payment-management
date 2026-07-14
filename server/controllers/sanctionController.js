@@ -1,6 +1,11 @@
+const fs = require('fs');
+const path = require('path');
+const mongoose = require('mongoose');
 const Member = require('../models/Member');
 const Ledger = require('../models/Ledger');
 const Rule = require('../models/Rule');
+
+const DB_PATH = path.join(__dirname, '..', 'data.json');
 
 const STANDING_THRESHOLD = 150;
 
@@ -18,24 +23,61 @@ const getNextTxId = async () => {
 };
 
 const getState = async () => {
-  const members = await Member.find().lean();
-  const ledger = await Ledger.find().lean();
-  let rulesDoc = await Rule.findOne().lean();
-  if (!rulesDoc) {
-    rulesDoc = { meeting: 50, major_event: 100, special_event: 150 };
+  try {
+    // If mongoose is not connected, skip DB calls to avoid buffering/timeouts
+    if (mongoose.connection.readyState !== 1) {
+      throw new Error('mongoose-not-connected');
+    }
+
+    const members = await Member.find().lean();
+    const ledger = await Ledger.find().lean();
+    let rulesDoc = await Rule.findOne().lean();
+    if (!rulesDoc) {
+      rulesDoc = { meeting: 50, major_event: 100, special_event: 150 };
+    }
+
+    if (Array.isArray(members) && members.length > 0) {
+      const cleanMembers = members.map(({ _id, __v, ...m }) => m);
+      const cleanLedger = ledger.map(({ _id, __v, ...l }) => l);
+      return {
+        members: cleanMembers,
+        ledger: cleanLedger,
+        rules: {
+          meeting: rulesDoc.meeting,
+          major_event: rulesDoc.major_event,
+          special_event: rulesDoc.special_event
+        }
+      };
+    }
+    // If DB returned no members, fall through to file fallback
+  } catch (err) {
+    if (err && err.message === 'mongoose-not-connected') {
+      console.warn('getState: mongoose not connected, using data.json fallback');
+    } else {
+      console.warn('getState: failed to read from MongoDB, falling back to data.json', err && err.message);
+    }
   }
 
-  const cleanMembers = members.map(({ _id, __v, ...m }) => m);
-  const cleanLedger = ledger.map(({ _id, __v, ...l }) => l);
-
-  return {
-    members: cleanMembers,
-    ledger: cleanLedger,
-    rules: {
-      meeting: rulesDoc.meeting,
-      major_event: rulesDoc.major_event,
-      special_event: rulesDoc.special_event
+  // Fallback: read from local data.json if present
+  try {
+    if (fs.existsSync(DB_PATH)) {
+      const raw = fs.readFileSync(DB_PATH, 'utf8');
+      const parsed = JSON.parse(raw);
+      return {
+        members: parsed.members || [],
+        ledger: parsed.ledger || [],
+        rules: parsed.rules || { meeting: 50, major_event: 100, special_event: 150 }
+      };
     }
+  } catch (fileErr) {
+    console.error('getState: failed to read fallback data.json', fileErr);
+  }
+
+  // Ultimate fallback: empty state
+  return {
+    members: [],
+    ledger: [],
+    rules: { meeting: 50, major_event: 100, special_event: 150 }
   };
 };
 

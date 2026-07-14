@@ -16,8 +16,11 @@ import {
   ListItemText, 
   Avatar, 
   Button, 
-  Alert
+  Alert,
+  IconButton
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import { getState, logInfraction, processPayment, updateRules } from './api/client';
 
 // Import Pages
@@ -71,6 +74,8 @@ const drawerWidth = 280;
 const STANDING_THRESHOLD = 150;
 
 function App() {
+  const appTheme = useTheme();
+  const isMobile = useMediaQuery(appTheme.breakpoints.down('md'));
   const [members, setMembers] = useState([]);
   const [ledger, setLedger] = useState([]);
   const [rules, setRules] = useState({ meeting: 50, major_event: 100, special_event: 150 });
@@ -90,6 +95,13 @@ function App() {
   const [simCustomEventName, setSimCustomEventName] = useState("");
 
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const navItems = [
+    { id: 'ledger', label: 'Member Ledger', icon: '📂' },
+    { id: 'simulator', label: 'Record Absences', icon: '⚡' },
+    { id: 'rules', label: 'Sanction Rules', icon: '⚙️' },
+  ];
 
   const syncState = () => {
     getState()
@@ -213,15 +225,18 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+      <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#fafafa' }}>
         <Drawer
-          variant="permanent"
+          variant={isMobile ? 'temporary' : 'permanent'}
+          open={isMobile ? mobileOpen : true}
+          onClose={() => setMobileOpen(false)}
+          ModalProps={{ keepMounted: true }}
           sx={{
             width: drawerWidth,
             flexShrink: 0,
-            [`& .MuiDrawer-paper`]: { 
-              width: drawerWidth, 
-              boxSizing: 'border-box', 
+            [`& .MuiDrawer-paper`]: {
+              width: drawerWidth,
+              boxSizing: 'border-box',
               backgroundColor: '#ffffff',
               borderRight: '1px solid #eeeeee',
               padding: '24px 16px'
@@ -236,15 +251,11 @@ function App() {
           </Box>
 
           <List sx={{ flexGrow: 1 }}>
-            {[
-              { id: 'ledger', label: 'Member Ledger', icon: '📂' },
-              { id: 'simulator', label: 'Record Absences', icon: '⚡' },
-              { id: 'rules', label: 'Sanction Rules', icon: '⚙️' },
-            ].map((item) => (
+            {navItems.map((item) => (
               <ListItem key={item.id} disablePadding sx={{ mb: 0.5 }}>
-                <ListItemButton 
+                <ListItemButton
                   selected={activeTab === item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => handleNavSelect(item.id)}
                   sx={{
                     borderRadius: '12px',
                     color: activeTab === item.id ? 'primary.main' : 'text.secondary',
@@ -268,17 +279,33 @@ function App() {
           </Box>
         </Drawer>
 
-        <Box component="main" sx={{ flexGrow: 1, p: 4, width: `calc(100% - ${drawerWidth}px)` }}>
-          <AppBar position="static" color="transparent" elevation={0} sx={{ mb: 4 }}>
-            <Toolbar sx={{ justifyContent: 'space-between', p: '0 !important' }}>
-              <Box>
-                <Typography variant="h4" sx={{ mb: 0.5 }}>
-                  {activeTab === 'simulator' && "Record Member Absences"}
-                  {activeTab === 'ledger' && "Member Financial Ledger"}
-                  {activeTab === 'rules' && "Sanction Policy & Rules"}
+        <Box component="main" sx={{ flexGrow: 1, p: { xs: 2, md: 4 }, width: { xs: '100%', md: `calc(100% - ${drawerWidth}px)` }, minWidth: 0 }}>
+          <AppBar position="static" color="transparent" elevation={0} sx={{ mb: 3, bgcolor: 'transparent', boxShadow: 'none' }}>
+            <Toolbar sx={{ justifyContent: 'space-between', p: '0 !important', flexWrap: 'wrap', gap: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                {isMobile && (
+                  <IconButton
+                    color="primary"
+                    onClick={() => setMobileOpen(true)}
+                    sx={{ border: '1px solid #eeeeee', borderRadius: 2 }}
+                    aria-label="Open navigation menu"
+                  >
+                    <span style={{ fontSize: '1.1rem' }}>☰</span>
+                  </IconButton>
+                )}
+                <Typography variant={isMobile ? 'h5' : 'h4'} sx={{ mb: 0.5 }}>
+                  {activeTab === 'simulator' && 'Record Member Absences'}
+                  {activeTab === 'ledger' && 'Member Financial Ledger'}
+                  {activeTab === 'rules' && 'Sanction Policy & Rules'}
                 </Typography>
               </Box>
-              <Button variant="contained" color="primary" onClick={() => setActiveTab("simulator")} startIcon={<span>⚡</span>} sx={{ color: '#fff' }}>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={() => setActiveTab('simulator')}
+                startIcon={<span>⚡</span>}
+                sx={{ color: '#fff', width: { xs: '100%', sm: 'auto' } }}
+              >
                 Record Absence
               </Button>
             </Toolbar>
