@@ -24,7 +24,5 @@ const apiClient = axios.create({
 });
 
 export const getState = () => apiClient.get('/api/state');
-export const logInfraction = (memberId, eventType, customEventName) => 
-  apiClient.post('/api/infraction', { memberId, eventType, customEventName });
 
 export default apiClient;

@@ -20,7 +20,7 @@ const buildSanctionDoc = ({ attendance, member, fineAmount, eventName, eventTitl
   status: normalizeString(attendance.status || attendance.state) || 'absent',
   eventType: resolvedEventType || attendance.eventType || attendance.event_type || 'meeting',
   description: eventTitle || attendance.description || attendance.notes || attendance.detail || '',
-  amount: fineAmount || 50,
+  amount: fineAmount || 100,
   event: eventName,
   date: attendance.date || getFormattedDate(),
   processedAt: getFormattedDate(),
@@ -161,7 +161,7 @@ const processAttendanceRecords = async ({ fromDate, toDate, status, eventType } 
     const eventTitle = eventDoc ? eventDoc.title : '';
     const recordEventType = eventDoc ? eventDoc.type : getAttendanceField(attendance, 'eventType', 'event_type', 'type');
     const useType = eventType || (validEventTypes.includes(recordEventType) ? recordEventType : 'meeting');
-    const fineAmount = 50;
+    const fineAmount = 100;
     const eventLabel = buildEventLabel(useType);
     const descriptionValue = eventTitle || getAttendanceField(attendance, 'description', 'notes', 'detail') || '';
     const eventName = `Unexcused Absence - ${eventLabel}${descriptionValue ? ` (${descriptionValue})` : ''}`;
@@ -269,67 +269,6 @@ const handleGetState = async (req, res) => {
   }
 };
 
-const handleLogInfraction = async (req, res) => {
-  const { memberId, eventType, customEventName } = req.body;
-
-  if (!memberId || !eventType || !customEventName) {
-    return res.status(400).json({ error: 'Missing required parameters: memberId, eventType, and customEventName are required.' });
-  }
-
-  if (typeof memberId !== 'string' || memberId.trim() === '') {
-    return res.status(400).json({ error: 'Invalid member ID.' });
-  }
-
-  const validEventTypes = ['meeting', 'major_event', 'special_event'];
-  if (!validEventTypes.includes(eventType)) {
-    return res.status(400).json({ error: `Invalid event type. Must be one of: ${validEventTypes.join(', ')}` });
-  }
-
-  if (typeof customEventName !== 'string' || customEventName.trim().length < 3 || customEventName.trim().length > 100) {
-    return res.status(400).json({ error: 'Event description must be a string between 3 and 100 characters.' });
-  }
-
-  const trimmedEventName = customEventName.trim();
-
-  try {
-    const member = await Member.findOne({ id: memberId.trim() });
-    if (!member) {
-      return res.status(404).json({ error: 'Member not found.' });
-    }
-
-    const fineAmount = 50;
-    const eventLabel = eventType === 'meeting' ? 'Meeting' : eventType === 'major_event' ? 'Major Event' : 'Special Event';
-    const eventName = `Unexcused Absence - ${eventLabel} (${trimmedEventName})`;
-    const txDate = getFormattedDate();
-
-    member.balance += fineAmount;
-    await member.save();
-
-    const sanctionCollection = await getSanctionCollection();
-    await sanctionCollection.insertOne(buildSanctionDoc({
-      attendance: {
-        attendanceId: null,
-        studentId: member.studentId || member.id,
-        status: 'absent',
-        eventType,
-        description: trimmedEventName,
-        date: txDate
-      },
-      member,
-      fineAmount,
-      eventName,
-      eventTitle: trimmedEventName,
-      resolvedEventType: eventType
-    }));
-
-    const state = await getState();
-    res.json(state);
-  } catch (error) {
-    console.error('Error processing infraction:', error);
-    res.status(500).json({ error: 'Database write failed' });
-  }
-};
-
 const handleProcessAttendance = async (req, res) => {
   const { fromDate, toDate, eventType } = req.body || {};
   const validEventTypes = ['meeting', 'major_event', 'special_event'];
@@ -411,7 +350,7 @@ const handleProcessAttendance = async (req, res) => {
       const eventTitle = eventDoc ? eventDoc.title : '';
       const recordEventType = eventDoc ? eventDoc.type : getAttendanceField(attendance, 'eventType', 'event_type', 'type');
       const useType = validEventTypes.includes(recordEventType) ? recordEventType : 'meeting';
-      const fineAmount = 50;
+      const fineAmount = 100;
       const eventLabel = buildEventLabel(useType);
       const descriptionValue = eventTitle || getAttendanceField(attendance, 'description', 'notes', 'detail') || '';
       const eventName = `Unexcused Absence - ${eventLabel}${descriptionValue ? ` (${descriptionValue})` : ''}`;
@@ -461,6 +400,5 @@ const handleProcessAttendance = async (req, res) => {
 
 module.exports = {
   handleGetState,
-  handleLogInfraction,
   handleProcessAttendance
 };

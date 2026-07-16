@@ -10,12 +10,10 @@ const Attendance = require('./models/Attendance');
   try {
     await mongoose.connect(process.env.MONGODB_URI);
     console.log('connected');
-    const attendanceCount = await Attendance.countDocuments();
-    const absentCount = await Attendance.countDocuments({ status: { $regex: /^absent$/i } });
-    const firstAbsent = await Attendance.findOne({ status: { $regex: /^absent$/i } }).lean();
-    const memberCount = await Member.countDocuments();
-    console.log({ attendanceCount, absentCount, memberCount });
-    console.log('firstAbsent', JSON.stringify(firstAbsent, null, 2));
+    
+    const sanctions = await mongoose.connection.db.collection('sanction').find().toArray();
+    console.log('Sanctions in sanction collection:', JSON.stringify(sanctions, null, 2));
+    
     await mongoose.disconnect();
   } catch (err) {
     console.error(err);
