@@ -26,9 +26,5 @@ const apiClient = axios.create({
 export const getState = () => apiClient.get('/api/state');
 export const logInfraction = (memberId, eventType, customEventName) => 
   apiClient.post('/api/infraction', { memberId, eventType, customEventName });
-export const processPayment = (memberId, amount, type, reference) => 
-  apiClient.post('/api/payment', { memberId, amount, type, reference });
-export const updateRules = (meeting, major_event, special_event) => 
-  apiClient.post('/api/rules', { meeting, major_event, special_event });
 
 export default apiClient;

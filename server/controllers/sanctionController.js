@@ -2,36 +2,28 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 const Member = require('../models/Member');
-const Ledger = require('../models/Ledger');
-const Rule = require('../models/Rule');
 const Attendance = require('../models/Attendance');
 
 const DB_PATH = path.join(__dirname, '..', 'data.json');
 
-const STANDING_THRESHOLD = 150;
-
 const getSanctionCollection = async () => {
   const sanctionCollectionName = 'sanction';
-  const exists = await mongoose.connection.db.listCollections({ name: sanctionCollectionName }).hasNext();
-  if (!exists) {
-    throw new Error('sanction-collection-missing');
-  }
   return mongoose.connection.db.collection(sanctionCollectionName);
 };
 
-const buildSanctionDoc = ({ attendance, member, fineAmount, eventName, txId }) => ({
+const buildSanctionDoc = ({ attendance, member, fineAmount, eventName, eventTitle, resolvedEventType }) => ({
   attendanceId: attendance.attendanceId || attendance._id,
   memberId: member.id,
+  memberName: member.name,
+  name: member.name,
   studentId: attendance.studentId || attendance.student_id || attendance.studentNumber || attendance.studentNo || '',
   status: normalizeString(attendance.status || attendance.state) || 'absent',
-  eventType: attendance.eventType || attendance.event_type || 'meeting',
-  description: attendance.description || attendance.notes || attendance.detail || '',
-  amount: fineAmount,
+  eventType: resolvedEventType || attendance.eventType || attendance.event_type || 'meeting',
+  description: eventTitle || attendance.description || attendance.notes || attendance.detail || '',
+  amount: fineAmount || 50,
   event: eventName,
   date: attendance.date || getFormattedDate(),
   processedAt: getFormattedDate(),
-  reference: '',
-  txId,
   createdAt: new Date()
 });
 
@@ -40,15 +32,6 @@ const getFormattedDate = () => {
   const pad = (n) => String(n).padStart(2, '0');
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 };
-
-const getNextTxId = async () => {
-  const lastTx = await Ledger.findOne({ id: /^TX\d+$/ }).sort({ id: -1 });
-  if (!lastTx) return 'TX001';
-  const num = parseInt(lastTx.id.replace('TX', ''), 10) || 0;
-  return `TX${String(num + 1).padStart(3, '0')}`;
-};
-
-const formatTxId = (number) => `TX${String(number).padStart(3, '0')}`;
 
 const buildEventLabel = (type) => {
   if (type === 'major_event') return 'Major Event';
@@ -101,10 +84,6 @@ const isAbsentAttendance = (record, statusOverride) => {
 
 const processAttendanceRecords = async ({ fromDate, toDate, status, eventType } = {}) => {
   const validEventTypes = ['meeting', 'major_event', 'special_event'];
-  let rulesDoc = await Rule.findOne();
-  if (!rulesDoc) {
-    rulesDoc = await Rule.create({ meeting: 50, major_event: 100, special_event: 150 });
-  }
 
   const filter = {
     $or: [
@@ -128,13 +107,10 @@ const processAttendanceRecords = async ({ fromDate, toDate, status, eventType } 
 
   const attendanceCollection = mongoose.connection.db.collection(collectionName);
   const sanctionCollection = await getSanctionCollection();
-  const lastTx = await Ledger.findOne({ id: /^TX\d+$/ }).sort({ id: -1 }).lean();
-  let nextTxNumber = lastTx ? parseInt(lastTx.id.replace('TX', ''), 10) || 0 : 0;
   const processedCount = { success: 0, skipped: 0 };
   const warnings = [];
   const attendanceUpdates = [];
   const memberSaves = [];
-  const ledgerCreates = [];
   const sanctionCreates = [];
 
   for (const attendance of filteredRecords) {
@@ -168,37 +144,38 @@ const processAttendanceRecords = async ({ fromDate, toDate, status, eventType } 
       continue;
     }
 
-    const recordEventType = getAttendanceField(attendance, 'eventType', 'event_type', 'type');
+    let eventDoc = null;
+    const eventRef = getAttendanceField(attendance, 'event', 'eventId', 'event_id');
+    if (eventRef) {
+      let eventIdQuery = eventRef;
+      if (typeof eventRef === 'string') {
+        eventIdQuery = mongoose.isValidObjectId(eventRef) ? new mongoose.Types.ObjectId(eventRef) : eventRef;
+      }
+      try {
+        eventDoc = await mongoose.connection.db.collection('events-data').findOne({ _id: eventIdQuery });
+      } catch (err) {
+        console.warn(`Failed to fetch event document ${eventRef}:`, err.message);
+      }
+    }
+
+    const eventTitle = eventDoc ? eventDoc.title : '';
+    const recordEventType = eventDoc ? eventDoc.type : getAttendanceField(attendance, 'eventType', 'event_type', 'type');
     const useType = eventType || (validEventTypes.includes(recordEventType) ? recordEventType : 'meeting');
-    const fineAmount = rulesDoc[useType] || rulesDoc.meeting;
+    const fineAmount = 50;
     const eventLabel = buildEventLabel(useType);
-    const descriptionValue = getAttendanceField(attendance, 'description', 'notes', 'detail');
+    const descriptionValue = eventTitle || getAttendanceField(attendance, 'description', 'notes', 'detail') || '';
     const eventName = `Unexcused Absence - ${eventLabel}${descriptionValue ? ` (${descriptionValue})` : ''}`;
 
     member.balance += fineAmount;
-    if (member.balance >= STANDING_THRESHOLD) {
-      member.standing = 'Not in Good Standing';
-    }
     memberSaves.push(member.save());
-
-    nextTxNumber += 1;
-    const newTxId = formatTxId(nextTxNumber);
-    ledgerCreates.push(Ledger.create({
-      id: newTxId,
-      memberId: member.id,
-      type: 'fine',
-      amount: fineAmount,
-      event: eventName,
-      date: getFormattedDate(),
-      reference: ''
-    }));
 
     sanctionCreates.push(sanctionCollection.insertOne(buildSanctionDoc({
       attendance,
       member,
       fineAmount,
       eventName,
-      txId: newTxId
+      eventTitle,
+      resolvedEventType: useType
     })));
 
     attendanceUpdates.push(
@@ -216,13 +193,12 @@ const processAttendanceRecords = async ({ fromDate, toDate, status, eventType } 
     processedCount.success += 1;
   }
 
-  await Promise.all([...memberSaves, ...ledgerCreates, ...sanctionCreates, ...attendanceUpdates]);
+  await Promise.all([...memberSaves, ...sanctionCreates, ...attendanceUpdates]);
   return { processed: processedCount.success, skipped: processedCount.skipped, warnings };
 };
 
 const getState = async () => {
   try {
-    // If mongoose is not connected, skip DB calls to avoid buffering/timeouts
     if (mongoose.connection.readyState !== 1) {
       throw new Error('mongoose-not-connected');
     }
@@ -230,26 +206,31 @@ const getState = async () => {
     await processAttendanceRecords();
 
     const members = await Member.find().lean();
-    const ledger = await Ledger.find().lean();
-    let rulesDoc = await Rule.findOne().lean();
-    if (!rulesDoc) {
-      rulesDoc = { meeting: 50, major_event: 100, special_event: 150 };
-    }
+    const sanctionCollection = await getSanctionCollection();
+    const sanctions = await sanctionCollection.find().toArray();
 
     if (Array.isArray(members) && members.length > 0) {
-      const cleanMembers = members.map(({ _id, __v, ...m }) => m);
-      const cleanLedger = ledger.map(({ _id, __v, ...l }) => l);
+      const cleanMembers = members.map(({ _id, __v, ...m }) => {
+        const id = m.id || m.studentId || _id.toString();
+        const name = m.name || [m.firstName, m.lastName].filter(Boolean).join(' ') || 'Unnamed Member';
+        return {
+          ...m,
+          id,
+          name,
+          balance: m.balance !== undefined ? m.balance : 0,
+          totalPaid: m.totalPaid !== undefined ? m.totalPaid : 0,
+          standing: m.standing || 'Good Standing'
+        };
+      });
+      const cleanSanctions = sanctions.map(({ _id, ...s }) => ({
+        ...s,
+        id: _id.toString()
+      }));
       return {
         members: cleanMembers,
-        ledger: cleanLedger,
-        rules: {
-          meeting: rulesDoc.meeting,
-          major_event: rulesDoc.major_event,
-          special_event: rulesDoc.special_event
-        }
+        sanctions: cleanSanctions
       };
     }
-    // If DB returned no members, fall through to file fallback
   } catch (err) {
     if (err && err.message === 'mongoose-not-connected') {
       console.warn('getState: mongoose not connected, using data.json fallback');
@@ -265,19 +246,16 @@ const getState = async () => {
       const parsed = JSON.parse(raw);
       return {
         members: parsed.members || [],
-        ledger: parsed.ledger || [],
-        rules: parsed.rules || { meeting: 50, major_event: 100, special_event: 150 }
+        sanctions: parsed.sanctions || []
       };
     }
   } catch (fileErr) {
     console.error('getState: failed to read fallback data.json', fileErr);
   }
 
-  // Ultimate fallback: empty state
   return {
     members: [],
-    ledger: [],
-    rules: { meeting: 50, major_event: 100, special_event: 150 }
+    sanctions: []
   };
 };
 
@@ -319,32 +297,13 @@ const handleLogInfraction = async (req, res) => {
       return res.status(404).json({ error: 'Member not found.' });
     }
 
-    let rulesDoc = await Rule.findOne();
-    if (!rulesDoc) {
-      rulesDoc = await Rule.create({ meeting: 50, major_event: 100, special_event: 150 });
-    }
-
-    const fineAmount = rulesDoc[eventType] || 50;
+    const fineAmount = 50;
     const eventLabel = eventType === 'meeting' ? 'Meeting' : eventType === 'major_event' ? 'Major Event' : 'Special Event';
     const eventName = `Unexcused Absence - ${eventLabel} (${trimmedEventName})`;
     const txDate = getFormattedDate();
 
     member.balance += fineAmount;
-    if (member.balance >= STANDING_THRESHOLD) {
-      member.standing = 'Not in Good Standing';
-    }
     await member.save();
-
-    const newTxId = await getNextTxId();
-    await Ledger.create({
-      id: newTxId,
-      memberId: member.id,
-      type: 'fine',
-      amount: fineAmount,
-      event: eventName,
-      date: txDate,
-      reference: ''
-    });
 
     const sanctionCollection = await getSanctionCollection();
     await sanctionCollection.insertOne(buildSanctionDoc({
@@ -359,7 +318,8 @@ const handleLogInfraction = async (req, res) => {
       member,
       fineAmount,
       eventName,
-      txId: newTxId
+      eventTitle: trimmedEventName,
+      resolvedEventType: eventType
     }));
 
     const state = await getState();
@@ -370,122 +330,11 @@ const handleLogInfraction = async (req, res) => {
   }
 };
 
-const handleProcessPayment = async (req, res) => {
-  const { memberId, amount, type, reference } = req.body;
-
-  if (!memberId || amount === undefined || !type) {
-    return res.status(400).json({ error: 'Missing required parameters: memberId, amount, and type are required.' });
-  }
-
-  const payAmt = parseFloat(amount);
-  if (isNaN(payAmt) || payAmt <= 0) {
-    return res.status(400).json({ error: 'Payment amount must be a positive number greater than 0.' });
-  }
-
-  const validTypes = ['cash', 'receipt'];
-  if (!validTypes.includes(type)) {
-    return res.status(400).json({ error: 'Payment type must be either "cash" or "receipt".' });
-  }
-
-  if (type === 'receipt') {
-    if (!reference || typeof reference !== 'string' || reference.trim().length < 5) {
-      return res.status(400).json({ error: 'Digital receipt payments require a reference code of at least 5 characters.' });
-    }
-  }
-
-  try {
-    const member = await Member.findOne({ id: memberId.trim() });
-    if (!member) {
-      return res.status(404).json({ error: 'Member not found.' });
-    }
-
-    if (payAmt > member.balance) {
-      return res.status(400).json({ error: `Payment of ₱${payAmt} exceeds outstanding balance of ₱${member.balance}.` });
-    }
-
-    const txDate = getFormattedDate();
-    const refCode = type === 'cash' ? `CASH-${member.id}-${Date.now().toString().slice(-4)}` : reference.trim();
-    const eventName = `Payment Received - ${type === 'cash' ? 'Cash' : 'Digital Receipt'}`;
-
-    member.balance -= payAmt;
-    member.totalPaid += payAmt;
-    if (member.balance < STANDING_THRESHOLD) {
-      member.standing = 'Good Standing';
-    }
-    await member.save();
-
-    const newTxId = await getNextTxId();
-    await Ledger.create({
-      id: newTxId,
-      memberId: member.id,
-      type: 'payment',
-      amount: payAmt,
-      event: eventName,
-      date: txDate,
-      reference: refCode
-    });
-
-    const state = await getState();
-    res.json(state);
-  } catch (error) {
-    console.error('Error processing payment:', error);
-    res.status(500).json({ error: 'Database write failed' });
-  }
-};
-
-const handleUpdateRules = async (req, res) => {
-  const { meeting, major_event, special_event } = req.body;
-
-  if (meeting === undefined && major_event === undefined && special_event === undefined) {
-    return res.status(400).json({ error: 'No rules values provided for update.' });
-  }
-
-  const validateRuleVal = (val, name) => {
-    if (val !== undefined) {
-      const num = Number(val);
-      if (!Number.isInteger(num) || num < 0 || num > 10000) {
-        throw new Error(`${name} fine must be a whole number between 0 and 10,000.`);
-      }
-      return num;
-    }
-    return undefined;
-  };
-
-  try {
-    const parsedMeeting = validateRuleVal(meeting, 'Meeting');
-    const parsedMajor = validateRuleVal(major_event, 'Major Event');
-    const parsedSpecial = validateRuleVal(special_event, 'Special Event');
-
-    let rulesDoc = await Rule.findOne();
-    if (!rulesDoc) {
-      rulesDoc = new Rule();
-    }
-    if (parsedMeeting !== undefined) rulesDoc.meeting = parsedMeeting;
-    if (parsedMajor !== undefined) rulesDoc.major_event = parsedMajor;
-    if (parsedSpecial !== undefined) rulesDoc.special_event = parsedSpecial;
-    await rulesDoc.save();
-
-    const state = await getState();
-    res.json(state);
-  } catch (error) {
-    if (error.message && error.message.includes('fine must be a whole number')) {
-      return res.status(400).json({ error: error.message });
-    }
-    console.error('Error updating rules:', error);
-    res.status(500).json({ error: 'Database write failed' });
-  }
-};
-
 const handleProcessAttendance = async (req, res) => {
   const { fromDate, toDate, eventType } = req.body || {};
   const validEventTypes = ['meeting', 'major_event', 'special_event'];
 
   try {
-    let rulesDoc = await Rule.findOne();
-    if (!rulesDoc) {
-      rulesDoc = await Rule.create({ meeting: 50, major_event: 100, special_event: 150 });
-    }
-
     const filter = {
       $or: [
         { processed: false },
@@ -508,64 +357,75 @@ const handleProcessAttendance = async (req, res) => {
     }
 
     const sanctionCollection = await getSanctionCollection();
-    const lastTx = await Ledger.findOne({ id: /^TX\d+$/ }).sort({ id: -1 }).lean();
-    let nextTxNumber = lastTx ? parseInt(lastTx.id.replace('TX', ''), 10) || 0 : 0;
     const processedCount = { success: 0, skipped: 0 };
     const warnings = [];
     const attendanceUpdates = [];
     const memberSaves = [];
-    const ledgerCreates = [];
     const sanctionCreates = [];
 
     for (const attendance of filteredRecords) {
-      if (!attendance.memberId && !attendance.studentId) {
+      const memberRef = getAttendanceField(attendance, 'member', 'memberId', 'member_id', 'memberid');
+      const studentIdValue = getAttendanceField(attendance, 'studentId', 'student_id', 'studentId', 'studentNumber', 'studentNo');
+
+      if (!memberRef && !studentIdValue) {
         warnings.push(`Skipping attendance record ${attendance.attendanceId || attendance._id} because no memberId or studentId was provided.`);
         processedCount.skipped += 1;
         continue;
       }
 
       let member = null;
-      if (attendance.memberId) {
-        member = await Member.findOne({ id: attendance.memberId.trim() });
+      if (memberRef) {
+        if (mongoose.isValidObjectId(memberRef)) {
+          member = await Member.findById(memberRef);
+        }
+        if (!member) {
+          member = await Member.findOne({ id: String(memberRef).trim() });
+        }
       }
-      if (!member && attendance.studentId) {
-        member = await Member.findOne({ studentId: attendance.studentId.trim() });
+      if (!member && studentIdValue) {
+        member = await Member.findOne({ studentId: String(studentIdValue).trim() });
+      }
+      if (!member && attendance.memberName) {
+        member = await Member.findOne({ name: String(attendance.memberName).trim() });
       }
       if (!member) {
-        warnings.push(`Member not found for attendance record ${attendance.attendanceId || attendance._id} (${attendance.memberId || attendance.studentId}).`);
+        warnings.push(`Member not found for attendance record ${attendance.attendanceId || attendance._id} (${memberRef || studentIdValue || attendance.memberName}).`);
         processedCount.skipped += 1;
         continue;
       }
 
-      const useType = validEventTypes.includes(attendance.eventType) ? attendance.eventType : 'meeting';
-      const fineAmount = rulesDoc[useType] || rulesDoc.meeting;
+      let eventDoc = null;
+      const eventRef = getAttendanceField(attendance, 'event', 'eventId', 'event_id');
+      if (eventRef) {
+        let eventIdQuery = eventRef;
+        if (typeof eventRef === 'string') {
+          eventIdQuery = mongoose.isValidObjectId(eventRef) ? new mongoose.Types.ObjectId(eventRef) : eventRef;
+        }
+        try {
+          eventDoc = await mongoose.connection.db.collection('events-data').findOne({ _id: eventIdQuery });
+        } catch (err) {
+          console.warn(`Failed to fetch event document ${eventRef}:`, err.message);
+        }
+      }
+
+      const eventTitle = eventDoc ? eventDoc.title : '';
+      const recordEventType = eventDoc ? eventDoc.type : getAttendanceField(attendance, 'eventType', 'event_type', 'type');
+      const useType = validEventTypes.includes(recordEventType) ? recordEventType : 'meeting';
+      const fineAmount = 50;
       const eventLabel = buildEventLabel(useType);
-      const eventName = `Unexcused Absence - ${eventLabel}${attendance.description ? ` (${attendance.description})` : ''}`;
+      const descriptionValue = eventTitle || getAttendanceField(attendance, 'description', 'notes', 'detail') || '';
+      const eventName = `Unexcused Absence - ${eventLabel}${descriptionValue ? ` (${descriptionValue})` : ''}`;
 
       member.balance += fineAmount;
-      if (member.balance >= STANDING_THRESHOLD) {
-        member.standing = 'Not in Good Standing';
-      }
       memberSaves.push(member.save());
-
-      nextTxNumber += 1;
-      const newTxId = formatTxId(nextTxNumber);
-      ledgerCreates.push(Ledger.create({
-        id: newTxId,
-        memberId: member.id,
-        type: 'fine',
-        amount: fineAmount,
-        event: eventName,
-        date: getFormattedDate(),
-        reference: ''
-      }));
 
       sanctionCreates.push(sanctionCollection.insertOne(buildSanctionDoc({
         attendance,
         member,
         fineAmount,
         eventName,
-        txId: newTxId
+        eventTitle,
+        resolvedEventType: useType
       })));
 
       attendanceUpdates.push(
@@ -583,7 +443,7 @@ const handleProcessAttendance = async (req, res) => {
       processedCount.success += 1;
     }
 
-    await Promise.all([...memberSaves, ...ledgerCreates, ...sanctionCreates, ...attendanceUpdates]);
+    await Promise.all([...memberSaves, ...sanctionCreates, ...attendanceUpdates]);
     const state = await getState();
 
     res.json({
@@ -602,7 +462,5 @@ const handleProcessAttendance = async (req, res) => {
 module.exports = {
   handleGetState,
   handleLogInfraction,
-  handleProcessPayment,
-  handleUpdateRules,
   handleProcessAttendance
 };

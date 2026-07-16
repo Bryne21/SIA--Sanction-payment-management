@@ -3,8 +3,6 @@ const dns = require('dns');
 const fs = require('fs');
 const path = require('path');
 const Member = require('../models/Member');
-const Ledger = require('../models/Ledger');
-const Rule = require('../models/Rule');
 
 // Force Node to use reliable public DNS servers for Atlas SRV/A lookup.
 const publicDnsServers = ['8.8.8.8', '1.1.1.1'];
@@ -24,6 +22,5 @@ const connectDB = async () => {
 
 module.exports = {
   connectDB,
-  MONGODB_URI,
-  DB_PATH
+  MONGODB_URI
 };

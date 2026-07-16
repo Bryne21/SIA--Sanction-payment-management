@@ -21,12 +21,11 @@ import {
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import { getState, logInfraction, processPayment, updateRules } from './api/client';
+import { getState, logInfraction } from './api/client';
 
 // Import Pages
 import AttendanceTrigger from './pages/AttendanceTrigger';
-import MemberLedger from './pages/MemberLedger';
-import SanctionRules from './pages/SanctionRules';
+import SanctionsList from './pages/SanctionsList';
 
 
 const theme = createTheme({
@@ -71,25 +70,14 @@ const theme = createTheme({
 });
 
 const drawerWidth = 280;
-const STANDING_THRESHOLD = 150;
 
 function App() {
   const appTheme = useTheme();
   const isMobile = useMediaQuery(appTheme.breakpoints.down('md'));
   const [members, setMembers] = useState([]);
-  const [ledger, setLedger] = useState([]);
-  const [rules, setRules] = useState({ meeting: 50, major_event: 100, special_event: 150 });
+  const [sanctions, setSanctions] = useState([]);
 
-
-  const [activeTab, setActiveTab] = useState("ledger");
-  const [selectedMemberId, setSelectedMemberId] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
-
-  const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentType, setPaymentType] = useState("cash");
-  const [receiptRef, setReceiptRef] = useState("");
-
+  const [activeTab, setActiveTab] = useState("sanctions");
   const [simMemberId, setSimMemberId] = useState("");
   const [simEventType, setSimEventType] = useState("meeting");
   const [simCustomEventName, setSimCustomEventName] = useState("");
@@ -98,20 +86,17 @@ function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const navItems = [
-    { id: 'ledger', label: 'Member Ledger', icon: '📂' },
+    { id: 'sanctions', label: 'Sanctions Directory', icon: '📂' },
     { id: 'simulator', label: 'Record Absences', icon: '⚡' },
-    { id: 'rules', label: 'Sanction Rules', icon: '⚙️' },
   ];
 
   const syncState = () => {
     getState()
       .then(res => {
         setMembers(res.data.members || []);
-        setLedger(res.data.ledger || []);
-        setRules(res.data.rules || { meeting: 50, major_event: 100, special_event: 150 });
+        setSanctions(res.data.sanctions || []);
 
         if (res.data.members && res.data.members.length > 0) {
-          if (!selectedMemberId) setSelectedMemberId(res.data.members[0].id);
           if (!simMemberId) setSimMemberId(res.data.members[0].id);
         }
       })
@@ -130,23 +115,6 @@ function App() {
     setTimeout(() => setNotification(prev => ({ ...prev, open: false })), 4000);
   };
 
-
-
-  const selectedMember = useMemo(() => members.find(m => m.id === selectedMemberId), [members, selectedMemberId]);
-  const selectedMemberHistory = useMemo(() => {
-    return ledger.filter(tx => tx.memberId === selectedMemberId).sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [ledger, selectedMemberId]);
-
-  const filteredMembers = useMemo(() => {
-    if (!searchQuery) return members;
-    const query = searchQuery.toLowerCase();
-    return members.filter(m => 
-      m.name.toLowerCase().includes(query) || m.id.toLowerCase().includes(query)
-    );
-  }, [members, searchQuery]);
-
-
-
   const handleTriggerAbsence = (e) => {
     e.preventDefault();
     if (!simMemberId) {
@@ -161,65 +129,13 @@ function App() {
     logInfraction(simMemberId, simEventType, simCustomEventName)
       .then(res => {
         setMembers(res.data.members);
-        setLedger(res.data.ledger);
+        setSanctions(res.data.sanctions);
 
-        setSelectedMemberId(simMemberId);
         setSimCustomEventName("");
         showToast("Assessed absence fine successfully");
-        setActiveTab("ledger");
+        setActiveTab("sanctions");
       })
       .catch(err => showToast(err.response?.data?.error || "Failed to process infraction", "error"));
-  };
-
-  const handleProcessPaymentSubmit = (e) => {
-    e.preventDefault();
-    const amt = parseFloat(paymentAmount);
-    if (!selectedMember) {
-      showToast("No member selected.", "error");
-      return;
-    }
-    if (isNaN(amt) || amt <= 0) {
-      showToast("Payment amount must be a positive number greater than 0.", "error");
-      return;
-    }
-    if (amt > selectedMember.balance) {
-      showToast(`Payment amount exceeds member's outstanding balance of ₱${selectedMember.balance}.`, "error");
-      return;
-    }
-    if (paymentType === 'receipt') {
-      if (!receiptRef || receiptRef.trim().length < 5) {
-        showToast("Digital receipt payments require a reference code of at least 5 characters.", "error");
-        return;
-      }
-    }
-
-    processPayment(selectedMember.id, amt, paymentType, receiptRef)
-      .then(res => {
-        setMembers(res.data.members);
-        setLedger(res.data.ledger);
-
-        setPaymentModalOpen(false);
-        setPaymentAmount("");
-        setReceiptRef("");
-        showToast("Payment recorded successfully");
-      })
-      .catch(err => showToast(err.response?.data?.error || "Payment failed", "error"));
-  };
-
-  const handleUpdateRules = (type, val) => {
-    const num = Number(val);
-    if (!Number.isInteger(num) || num < 0 || num > 10000) {
-      showToast("Rules value must be a whole number between 0 and 10,000.", "error");
-      return;
-    }
-
-    updateRules(type === 'meeting' ? num : rules.meeting, type === 'major_event' ? num : rules.major_event, type === 'special_event' ? num : rules.special_event)
-      .then(res => {
-        setRules(res.data.rules);
-
-        showToast("Rules updated successfully");
-      })
-      .catch(err => showToast(err.response?.data?.error || "Failed to update rules", "error"));
   };
 
   const handleNavSelect = (tabId) => {
@@ -302,8 +218,7 @@ function App() {
                 )}
                 <Typography variant={isMobile ? 'h5' : 'h4'} sx={{ mb: 0.5 }}>
                   {activeTab === 'simulator' && 'Record Member Absences'}
-                  {activeTab === 'ledger' && 'Member Financial Ledger'}
-                  {activeTab === 'rules' && 'Sanction Policy & Rules'}
+                  {activeTab === 'sanctions' && 'Sanctions Directory'}
                 </Typography>
               </Box>
               <Button
@@ -324,11 +239,10 @@ function App() {
             </Alert>
           )}
 
-
           {activeTab === 'simulator' && (
             <AttendanceTrigger 
               members={members} 
-              rules={rules} 
+              rules={{ meeting: 50, major_event: 50, special_event: 50 }} 
               simMemberId={simMemberId} 
               setSimMemberId={setSimMemberId} 
               simEventType={simEventType} 
@@ -338,30 +252,8 @@ function App() {
               handleTriggerAbsence={handleTriggerAbsence} 
             />
           )}
-          {activeTab === 'ledger' && (
-            <MemberLedger 
-              members={filteredMembers} 
-              ledger={ledger} 
-              selectedMemberId={selectedMemberId} 
-              setSelectedMemberId={setSelectedMemberId} 
-              searchQuery={searchQuery} 
-              setSearchQuery={setSearchQuery} 
-              paymentAmount={paymentAmount} 
-              setPaymentAmount={setPaymentAmount} 
-              paymentType={paymentType} 
-              setPaymentType={setPaymentType} 
-              receiptRef={receiptRef} 
-              setReceiptRef={setReceiptRef} 
-              paymentModalOpen={paymentModalOpen} 
-              setPaymentModalOpen={setPaymentModalOpen} 
-              handleProcessPaymentSubmit={handleProcessPaymentSubmit} 
-              STANDING_THRESHOLD={STANDING_THRESHOLD} 
-              selectedMember={selectedMember} 
-              selectedMemberHistory={selectedMemberHistory} 
-            />
-          )}
-          {activeTab === 'rules' && (
-            <SanctionRules rules={rules} handleUpdateRules={handleUpdateRules} />
+          {activeTab === 'sanctions' && (
+            <SanctionsList sanctions={sanctions} />
           )}
 
         </Box>
