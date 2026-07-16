@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const memberSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, unique: true, index: true },
+    studentId: { type: String, required: false, index: true },
     name: { type: String, required: true },
     email: { type: String, required: false },
     balance: { type: Number, required: true, default: 0 },

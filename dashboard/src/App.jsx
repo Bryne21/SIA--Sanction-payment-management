@@ -222,6 +222,13 @@ function App() {
       .catch(err => showToast(err.response?.data?.error || "Failed to update rules", "error"));
   };
 
+  const handleNavSelect = (tabId) => {
+    setActiveTab(tabId);
+    if (isMobile) {
+      setMobileOpen(false);
+    }
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />

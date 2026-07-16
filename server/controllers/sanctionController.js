@@ -4,10 +4,36 @@ const mongoose = require('mongoose');
 const Member = require('../models/Member');
 const Ledger = require('../models/Ledger');
 const Rule = require('../models/Rule');
+const Attendance = require('../models/Attendance');
 
 const DB_PATH = path.join(__dirname, '..', 'data.json');
 
 const STANDING_THRESHOLD = 150;
+
+const getSanctionCollection = async () => {
+  const sanctionCollectionName = 'sanction';
+  const exists = await mongoose.connection.db.listCollections({ name: sanctionCollectionName }).hasNext();
+  if (!exists) {
+    throw new Error('sanction-collection-missing');
+  }
+  return mongoose.connection.db.collection(sanctionCollectionName);
+};
+
+const buildSanctionDoc = ({ attendance, member, fineAmount, eventName, txId }) => ({
+  attendanceId: attendance.attendanceId || attendance._id,
+  memberId: member.id,
+  studentId: attendance.studentId || attendance.student_id || attendance.studentNumber || attendance.studentNo || '',
+  status: normalizeString(attendance.status || attendance.state) || 'absent',
+  eventType: attendance.eventType || attendance.event_type || 'meeting',
+  description: attendance.description || attendance.notes || attendance.detail || '',
+  amount: fineAmount,
+  event: eventName,
+  date: attendance.date || getFormattedDate(),
+  processedAt: getFormattedDate(),
+  reference: '',
+  txId,
+  createdAt: new Date()
+});
 
 const getFormattedDate = () => {
   const now = new Date();
@@ -18,8 +44,180 @@ const getFormattedDate = () => {
 const getNextTxId = async () => {
   const lastTx = await Ledger.findOne({ id: /^TX\d+$/ }).sort({ id: -1 });
   if (!lastTx) return 'TX001';
-  const num = parseInt(lastTx.id.replace('TX', '')) || 0;
+  const num = parseInt(lastTx.id.replace('TX', ''), 10) || 0;
   return `TX${String(num + 1).padStart(3, '0')}`;
+};
+
+const formatTxId = (number) => `TX${String(number).padStart(3, '0')}`;
+
+const buildEventLabel = (type) => {
+  if (type === 'major_event') return 'Major Event';
+  if (type === 'special_event') return 'Special Event';
+  return 'Meeting';
+};
+
+const normalizeString = (value) => {
+  if (value === undefined || value === null) return '';
+  return String(value).trim().toLowerCase();
+};
+
+const getAttendanceField = (record, ...fields) => {
+  for (const field of fields) {
+    if (record[field] !== undefined && record[field] !== null) {
+      return record[field];
+    }
+  }
+  return undefined;
+};
+
+const getAttendanceCollectionName = async () => {
+  const candidates = ['attendance', 'attendances'];
+  for (const name of candidates) {
+    const exists = await mongoose.connection.db.listCollections({ name }).hasNext();
+    if (exists) return name;
+  }
+  return candidates[0];
+};
+
+const isAbsentAttendance = (record, statusOverride) => {
+  const statusValue = normalizeString(getAttendanceField(record, 'status', 'attendanceStatus', 'attendance_status', 'state'));
+  const presentValue = getAttendanceField(record, 'present');
+  const absentValues = ['absent', 'a', 'no', 'n', 'unexcused'];
+
+  if (statusOverride) {
+    return normalizeString(statusOverride) === statusValue;
+  }
+
+  if (typeof presentValue === 'boolean') {
+    return !presentValue;
+  }
+
+  if (presentValue !== undefined && presentValue !== null) {
+    return normalizeString(presentValue) === 'false' || normalizeString(presentValue) === '0';
+  }
+
+  return absentValues.includes(statusValue);
+};
+
+const processAttendanceRecords = async ({ fromDate, toDate, status, eventType } = {}) => {
+  const validEventTypes = ['meeting', 'major_event', 'special_event'];
+  let rulesDoc = await Rule.findOne();
+  if (!rulesDoc) {
+    rulesDoc = await Rule.create({ meeting: 50, major_event: 100, special_event: 150 });
+  }
+
+  const filter = {
+    $or: [
+      { processed: false },
+      { processed: { $exists: false } }
+    ]
+  };
+
+  if (fromDate || toDate) {
+    filter.date = {};
+    if (fromDate) filter.date.$gte = fromDate;
+    if (toDate) filter.date.$lte = toDate;
+  }
+
+  const collectionName = await getAttendanceCollectionName();
+  const attendanceRecords = await mongoose.connection.db.collection(collectionName).find(filter).toArray();
+  const filteredRecords = attendanceRecords.filter(record => isAbsentAttendance(record, status));
+  if (!filteredRecords.length) {
+    return { processed: 0, skipped: 0, warnings: [] };
+  }
+
+  const attendanceCollection = mongoose.connection.db.collection(collectionName);
+  const sanctionCollection = await getSanctionCollection();
+  const lastTx = await Ledger.findOne({ id: /^TX\d+$/ }).sort({ id: -1 }).lean();
+  let nextTxNumber = lastTx ? parseInt(lastTx.id.replace('TX', ''), 10) || 0 : 0;
+  const processedCount = { success: 0, skipped: 0 };
+  const warnings = [];
+  const attendanceUpdates = [];
+  const memberSaves = [];
+  const ledgerCreates = [];
+  const sanctionCreates = [];
+
+  for (const attendance of filteredRecords) {
+    const memberRef = getAttendanceField(attendance, 'member', 'memberId', 'member_id', 'memberid');
+    const studentIdValue = getAttendanceField(attendance, 'studentId', 'student_id', 'studentId', 'studentNumber', 'studentNo');
+
+    if (!memberRef && !studentIdValue) {
+      warnings.push(`Skipping attendance record ${attendance.attendanceId || attendance._id} because no memberId or studentId was provided.`);
+      processedCount.skipped += 1;
+      continue;
+    }
+
+    let member = null;
+    if (memberRef) {
+      if (mongoose.isValidObjectId(memberRef)) {
+        member = await Member.findById(memberRef);
+      }
+      if (!member) {
+        member = await Member.findOne({ id: String(memberRef).trim() });
+      }
+    }
+    if (!member && studentIdValue) {
+      member = await Member.findOne({ studentId: String(studentIdValue).trim() });
+    }
+    if (!member && attendance.memberName) {
+      member = await Member.findOne({ name: String(attendance.memberName).trim() });
+    }
+    if (!member) {
+      warnings.push(`Member not found for attendance record ${attendance.attendanceId || attendance._id} (${memberRef || studentIdValue || attendance.memberName}).`);
+      processedCount.skipped += 1;
+      continue;
+    }
+
+    const recordEventType = getAttendanceField(attendance, 'eventType', 'event_type', 'type');
+    const useType = eventType || (validEventTypes.includes(recordEventType) ? recordEventType : 'meeting');
+    const fineAmount = rulesDoc[useType] || rulesDoc.meeting;
+    const eventLabel = buildEventLabel(useType);
+    const descriptionValue = getAttendanceField(attendance, 'description', 'notes', 'detail');
+    const eventName = `Unexcused Absence - ${eventLabel}${descriptionValue ? ` (${descriptionValue})` : ''}`;
+
+    member.balance += fineAmount;
+    if (member.balance >= STANDING_THRESHOLD) {
+      member.standing = 'Not in Good Standing';
+    }
+    memberSaves.push(member.save());
+
+    nextTxNumber += 1;
+    const newTxId = formatTxId(nextTxNumber);
+    ledgerCreates.push(Ledger.create({
+      id: newTxId,
+      memberId: member.id,
+      type: 'fine',
+      amount: fineAmount,
+      event: eventName,
+      date: getFormattedDate(),
+      reference: ''
+    }));
+
+    sanctionCreates.push(sanctionCollection.insertOne(buildSanctionDoc({
+      attendance,
+      member,
+      fineAmount,
+      eventName,
+      txId: newTxId
+    })));
+
+    attendanceUpdates.push(
+      attendanceCollection.updateOne(
+        { _id: attendance._id },
+        {
+          $set: {
+            processed: true,
+            processedAt: getFormattedDate(),
+            memberId: member.id
+          }
+        }
+      )
+    );
+    processedCount.success += 1;
+  }
+
+  await Promise.all([...memberSaves, ...ledgerCreates, ...sanctionCreates, ...attendanceUpdates]);
+  return { processed: processedCount.success, skipped: processedCount.skipped, warnings };
 };
 
 const getState = async () => {
@@ -28,6 +226,8 @@ const getState = async () => {
     if (mongoose.connection.readyState !== 1) {
       throw new Error('mongoose-not-connected');
     }
+
+    await processAttendanceRecords();
 
     const members = await Member.find().lean();
     const ledger = await Ledger.find().lean();
@@ -146,6 +346,22 @@ const handleLogInfraction = async (req, res) => {
       reference: ''
     });
 
+    const sanctionCollection = await getSanctionCollection();
+    await sanctionCollection.insertOne(buildSanctionDoc({
+      attendance: {
+        attendanceId: null,
+        studentId: member.studentId || member.id,
+        status: 'absent',
+        eventType,
+        description: trimmedEventName,
+        date: txDate
+      },
+      member,
+      fineAmount,
+      eventName,
+      txId: newTxId
+    }));
+
     const state = await getState();
     res.json(state);
   } catch (error) {
@@ -260,9 +476,133 @@ const handleUpdateRules = async (req, res) => {
   }
 };
 
+const handleProcessAttendance = async (req, res) => {
+  const { fromDate, toDate, eventType } = req.body || {};
+  const validEventTypes = ['meeting', 'major_event', 'special_event'];
+
+  try {
+    let rulesDoc = await Rule.findOne();
+    if (!rulesDoc) {
+      rulesDoc = await Rule.create({ meeting: 50, major_event: 100, special_event: 150 });
+    }
+
+    const filter = {
+      $or: [
+        { processed: false },
+        { processed: { $exists: false } }
+      ]
+    };
+    if (eventType) filter.eventType = eventType;
+    if (fromDate || toDate) {
+      filter.date = {};
+      if (fromDate) filter.date.$gte = fromDate;
+      if (toDate) filter.date.$lte = toDate;
+    }
+
+    const collectionName = await getAttendanceCollectionName();
+    const attendanceCollection = mongoose.connection.db.collection(collectionName);
+    const attendanceRecords = await attendanceCollection.find(filter).toArray();
+    const filteredRecords = attendanceRecords.filter(record => isAbsentAttendance(record));
+    if (!filteredRecords.length) {
+      return res.json({ message: 'No unprocessed attendance absences found.', processed: 0, skipped: 0, warnings: [] });
+    }
+
+    const sanctionCollection = await getSanctionCollection();
+    const lastTx = await Ledger.findOne({ id: /^TX\d+$/ }).sort({ id: -1 }).lean();
+    let nextTxNumber = lastTx ? parseInt(lastTx.id.replace('TX', ''), 10) || 0 : 0;
+    const processedCount = { success: 0, skipped: 0 };
+    const warnings = [];
+    const attendanceUpdates = [];
+    const memberSaves = [];
+    const ledgerCreates = [];
+    const sanctionCreates = [];
+
+    for (const attendance of filteredRecords) {
+      if (!attendance.memberId && !attendance.studentId) {
+        warnings.push(`Skipping attendance record ${attendance.attendanceId || attendance._id} because no memberId or studentId was provided.`);
+        processedCount.skipped += 1;
+        continue;
+      }
+
+      let member = null;
+      if (attendance.memberId) {
+        member = await Member.findOne({ id: attendance.memberId.trim() });
+      }
+      if (!member && attendance.studentId) {
+        member = await Member.findOne({ studentId: attendance.studentId.trim() });
+      }
+      if (!member) {
+        warnings.push(`Member not found for attendance record ${attendance.attendanceId || attendance._id} (${attendance.memberId || attendance.studentId}).`);
+        processedCount.skipped += 1;
+        continue;
+      }
+
+      const useType = validEventTypes.includes(attendance.eventType) ? attendance.eventType : 'meeting';
+      const fineAmount = rulesDoc[useType] || rulesDoc.meeting;
+      const eventLabel = buildEventLabel(useType);
+      const eventName = `Unexcused Absence - ${eventLabel}${attendance.description ? ` (${attendance.description})` : ''}`;
+
+      member.balance += fineAmount;
+      if (member.balance >= STANDING_THRESHOLD) {
+        member.standing = 'Not in Good Standing';
+      }
+      memberSaves.push(member.save());
+
+      nextTxNumber += 1;
+      const newTxId = formatTxId(nextTxNumber);
+      ledgerCreates.push(Ledger.create({
+        id: newTxId,
+        memberId: member.id,
+        type: 'fine',
+        amount: fineAmount,
+        event: eventName,
+        date: getFormattedDate(),
+        reference: ''
+      }));
+
+      sanctionCreates.push(sanctionCollection.insertOne(buildSanctionDoc({
+        attendance,
+        member,
+        fineAmount,
+        eventName,
+        txId: newTxId
+      })));
+
+      attendanceUpdates.push(
+        attendanceCollection.updateOne(
+          { _id: attendance._id },
+          {
+            $set: {
+              processed: true,
+              processedAt: getFormattedDate(),
+              memberId: member.id
+            }
+          }
+        )
+      );
+      processedCount.success += 1;
+    }
+
+    await Promise.all([...memberSaves, ...ledgerCreates, ...sanctionCreates, ...attendanceUpdates]);
+    const state = await getState();
+
+    res.json({
+      message: 'Processed attendance absences into sanctions.',
+      processed: processedCount.success,
+      skipped: processedCount.skipped,
+      warnings,
+      state
+    });
+  } catch (error) {
+    console.error('Error processing attendance records:', error);
+    res.status(500).json({ error: 'Failed to process attendance records' });
+  }
+};
+
 module.exports = {
   handleGetState,
   handleLogInfraction,
   handleProcessPayment,
-  handleUpdateRules
+  handleUpdateRules,
+  handleProcessAttendance
 };
