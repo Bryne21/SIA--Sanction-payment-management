@@ -205,9 +205,58 @@ const getState = async () => {
 
     await processAttendanceRecords();
 
-    const members = await Member.find().lean();
     const sanctionCollection = await getSanctionCollection();
-    const sanctions = await sanctionCollection.find().toArray();
+    const collectionName = await getAttendanceCollectionName();
+    const attendanceCollection = mongoose.connection.db.collection(collectionName);
+
+    // Reconcile/sync manual deletions from attendances
+    let sanctions = await sanctionCollection.find().toArray();
+    const attendanceIds = sanctions.map(s => s.attendanceId).filter(Boolean);
+
+    const queryIds = [];
+    for (const id of attendanceIds) {
+      queryIds.push(id.toString());
+      if (mongoose.isValidObjectId(id)) {
+        queryIds.push(new mongoose.Types.ObjectId(id));
+      }
+    }
+
+    const existingAttendances = await attendanceCollection.find({
+      _id: { $in: queryIds }
+    }).project({ _id: 1 }).toArray();
+
+    const existingIdsSet = new Set();
+    existingAttendances.forEach(a => {
+      if (a._id) {
+        existingIdsSet.add(a._id.toString());
+      }
+    });
+
+    const sanctionsToDelete = sanctions.filter(s => {
+      if (!s.attendanceId) return false;
+      return !existingIdsSet.has(s.attendanceId.toString());
+    });
+
+    if (sanctionsToDelete.length > 0) {
+      const idsToDelete = sanctionsToDelete.map(s => s._id);
+      await sanctionCollection.deleteMany({ _id: { $in: idsToDelete } });
+      
+      // Also decrement member balances for deleted sanctions
+      for (const sanction of sanctionsToDelete) {
+        if (sanction.memberId) {
+          const member = await Member.findOne({ id: sanction.memberId });
+          if (member) {
+            member.balance = Math.max(0, member.balance - (sanction.amount || 100));
+            await member.save();
+          }
+        }
+      }
+      console.log(`Reconciled database: Deleted ${sanctionsToDelete.length} stale sanctions and adjusted member balances.`);
+      // Refresh sanctions list
+      sanctions = await sanctionCollection.find().toArray();
+    }
+
+    const members = await Member.find().lean();
 
     if (Array.isArray(members) && members.length > 0) {
       const cleanMembers = members.map(({ _id, __v, ...m }) => {
