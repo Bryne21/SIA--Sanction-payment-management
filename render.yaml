@@ -20,5 +20,5 @@ services:
     staticPublishPath: dashboard/dist
     envVars:
       - key: VITE_API_BASE_URL
-        value: https://sanction-backend.onrender.com
+        value: https://sia-sanction-payment-management.onrender.com
         sync: false

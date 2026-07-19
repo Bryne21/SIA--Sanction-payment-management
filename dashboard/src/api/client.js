@@ -6,10 +6,10 @@ const getApiBaseUrl = () => {
   if (import.meta.env.DEV) {
     return '';
   }
-  
-  // In production, use Vercel rewrites (which forward to Render backend)
-  // Vercel's vercel.json handles routing /api/* to the Render backend
-  return '';
+
+  // In production, prefer an explicitly configured backend URL when available.
+  // For Vercel deployments, empty string still works if /api/* is rewritten to Render.
+  return import.meta.env.VITE_API_BASE_URL || '';
 };
 
 const apiClient = axios.create({

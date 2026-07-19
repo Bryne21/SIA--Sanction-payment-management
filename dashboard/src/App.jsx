@@ -106,7 +106,7 @@ function App() {
             </Toolbar>
           </Container>
         </AppBar>
-{/* Main Content Area */}
+
         {/* Main Content Area */}
         <Container maxWidth="lg" sx={{ mt: 4 }}>
           <Box sx={{ mb: 3 }}>
