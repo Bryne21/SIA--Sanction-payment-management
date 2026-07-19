@@ -14,140 +14,205 @@ import {
   Paper,
   Avatar,
   Chip,
-  Grid
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Button,
+  Stack
 } from '@mui/material';
 
 function SanctionsList({ sanctions }) {
   const [search, setSearch] = useState('');
+  const [eventFilter, setEventFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const itemsPerPage = 6;
+
+  const getEventCategory = (record) => {
+    const text = `${record.description || ''} ${record.event || ''}`.toLowerCase();
+    if (text.includes('jpice')) return 'JPICE Seminar';
+    if (text.includes('micro seminar') || text.includes('microseminar')) return 'Micro Seminar';
+    return 'Other';
+  };
 
   const filteredSanctions = useMemo(() => {
-    if (!search) return sanctions;
-    const query = search.toLowerCase();
-    return sanctions.filter(s => 
-      (s.name && s.name.toLowerCase().includes(query)) ||
-      (s.memberName && s.memberName.toLowerCase().includes(query)) ||
-      (s.studentId && s.studentId.toLowerCase().includes(query)) ||
-      (s.description && s.description.toLowerCase().includes(query)) ||
-      (s.event && s.event.toLowerCase().includes(query))
-    );
-  }, [sanctions, search]);
+    let result = sanctions;
 
-  const uniqueMembersCount = useMemo(() => {
-    const memberIds = new Set(sanctions.map(s => s.studentId || s.memberId));
-    return memberIds.size;
-  }, [sanctions]);
+    if (search) {
+      const query = search.toLowerCase();
+      result = result.filter(s =>
+        (s.name && s.name.toLowerCase().includes(query)) ||
+        (s.memberName && s.memberName.toLowerCase().includes(query)) ||
+        (s.studentId && s.studentId.toLowerCase().includes(query)) ||
+        (s.description && s.description.toLowerCase().includes(query)) ||
+        (s.event && s.event.toLowerCase().includes(query))
+      );
+    }
 
-  const mostCommonEvent = useMemo(() => {
-    if (!sanctions.length) return 'None';
-    const counts = {};
-    sanctions.forEach(s => {
-      const desc = s.description || s.event || 'Unspecified';
-      counts[desc] = (counts[desc] || 0) + 1;
-    });
-    let maxCount = 0;
-    let common = 'None';
-    Object.entries(counts).forEach(([event, count]) => {
-      if (count > maxCount) {
-        maxCount = count;
-        common = event;
-      }
-    });
-    return common;
-  }, [sanctions]);
+    if (eventFilter !== 'all') {
+      result = result.filter(s => getEventCategory(s) === eventFilter);
+    }
+
+    return result;
+  }, [sanctions, search, eventFilter]);
+
+  const totalPages = Math.ceil(filteredSanctions.length / itemsPerPage);
+  const paginatedSanctions = filteredSanctions.slice(
+    (page - 1) * itemsPerPage,
+    page * itemsPerPage
+  );
 
   return (
     <Box sx={{ animation: 'fadeIn 0.3s ease-out' }}>
-      {/* Metric Cards */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={4}>
-          <Card sx={{ border: '1px solid #eeeeee', boxShadow: 'none', backgroundColor: '#ffffff' }}>
-            <CardContent sx={{ p: 3 }}>
-              <Typography variant="caption" color="text.secondary" fontWeight={600}>Total Recorded Sanctions</Typography>
-              <Typography variant="h4" color="primary.main" sx={{ mt: 1, fontWeight: 700 }}>
-                {sanctions.length}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={4}>
-          <Card sx={{ border: '1px solid #eeeeee', boxShadow: 'none', backgroundColor: '#ffffff' }}>
-            <CardContent sx={{ p: 3 }}>
-              <Typography variant="caption" color="text.secondary" fontWeight={600}>Unique Flagged Members</Typography>
-              <Typography variant="h4" color="primary.main" sx={{ mt: 1, fontWeight: 700 }}>
-                {uniqueMembersCount}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={4}>
-          <Card sx={{ border: '1px solid #eeeeee', boxShadow: 'none', backgroundColor: '#ffffff' }}>
-            <CardContent sx={{ p: 3 }}>
-              <Typography variant="caption" color="text.secondary" fontWeight={600}>Most Common Absence Event</Typography>
-              <Typography variant="h6" noWrap color="primary.main" sx={{ mt: 1.5, fontWeight: 700 }}>
-                {mostCommonEvent}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* Sanctions List Card */}
-      <Card sx={{ border: '1px solid #eeeeee', boxShadow: 'none', backgroundColor: '#ffffff' }}>
+      {/* Main Card */}
+      <Card sx={{ 
+        border: '1px solid #eeeeee', 
+        boxShadow: 'none', 
+        backgroundColor: '#ffffff',
+        borderRadius: 2
+      }}>
         <CardContent sx={{ p: 4 }}>
-          <Typography variant="h6" sx={{ mb: 2, fontWeight: 700 }}>Sanctioned Absences Record</Typography>
-          
-          <TextField
-            fullWidth
-            size="small"
-            label="Search sanctions by member name, student ID, or event..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            sx={{ mb: 3 }}
-          />
+          {/* Title Section */}
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a1a', mb: 1 }}>
+              Sanctioned Absences ({filteredSanctions.length})
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              View and filter sanction records by member and seminar event.
+            </Typography>
+          </Box>
 
-          <TableContainer component={Paper} sx={{ boxShadow: 'none', border: '1px solid #eeeeee', maxHeight: 450, overflowY: 'auto' }}>
-            <Table stickyHeader>
+          {/* Search and Filter Section */}
+          <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <TextField
+              placeholder="Enter Student Credentials"
+              size="small"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              sx={{ 
+                flex: 1, 
+                minWidth: 250,
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 1,
+                  backgroundColor: '#ffffff'
+                }
+              }}
+            />
+            <FormControl size="small" sx={{ minWidth: 160 }}>
+              <InputLabel>Event Type</InputLabel>
+              <Select
+                value={eventFilter}
+                label="Event Type"
+                onChange={(e) => {
+                  setEventFilter(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <MenuItem value="all">All Events</MenuItem>
+                <MenuItem value="JPICE Seminar">JPICE Seminar</MenuItem>
+                <MenuItem value="Micro Seminar">Micro Seminar</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+
+          {/* Table Section */}
+          <TableContainer component={Paper} sx={{ 
+            boxShadow: 'none', 
+            border: '1px solid #eeeeee',
+            borderRadius: 1,
+            overflow: 'auto'
+          }}>
+            <Table>
               <TableHead>
-                <TableRow>
-                  <TableCell style={{ backgroundColor: '#800000', color: '#ffffff', fontWeight: 600 }}>Member</TableCell>
-                  <TableCell style={{ backgroundColor: '#800000', color: '#ffffff', fontWeight: 600 }}>Student ID</TableCell>
-                  <TableCell style={{ backgroundColor: '#800000', color: '#ffffff', fontWeight: 600 }}>Event Description</TableCell>
-                  <TableCell style={{ backgroundColor: '#800000', color: '#ffffff', fontWeight: 600 }}>Fine Amount</TableCell>
-                  <TableCell style={{ backgroundColor: '#800000', color: '#ffffff', fontWeight: 600 }}>Processed Date</TableCell>
-                  <TableCell style={{ backgroundColor: '#800000', color: '#ffffff', fontWeight: 600 }}>Status</TableCell>
+                <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
+                  <TableCell sx={{ fontWeight: 700, color: '#1a1a1a', borderBottom: '2px solid #eeeeee' }}>
+                    Student ID
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 700, color: '#1a1a1a', borderBottom: '2px solid #eeeeee' }}>
+                    Name
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 700, color: '#1a1a1a', borderBottom: '2px solid #eeeeee' }}>
+                    Event
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 700, color: '#1a1a1a', borderBottom: '2px solid #eeeeee' }}>
+                    Fine Amount
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 700, color: '#1a1a1a', borderBottom: '2px solid #eeeeee' }}>
+                    Status
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 700, color: '#1a1a1a', borderBottom: '2px solid #eeeeee' }}>
+                    Actions
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredSanctions.map((s) => {
+                {paginatedSanctions.map((s) => {
                   const mName = s.memberName || s.name || 'Unnamed Member';
+                  const eventCategory = getEventCategory(s);
                   return (
-                    <TableRow key={s.id || s._id} hover>
-                      <TableCell>
+                    <TableRow key={s.id || s._id} hover sx={{ '&:hover': { backgroundColor: '#f9f9f9' } }}>
+                      <TableCell sx={{ py: 2, color: '#555555', fontWeight: 600 }}>
+                        {s.studentId || s.memberId || '-'}
+                      </TableCell>
+                      <TableCell sx={{ py: 2 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                          <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', color: '#ffffff', fontSize: '0.85rem' }}>
-                            {mName.split(' ').map(n=>n[0]).join('')}
+                          <Avatar sx={{ 
+                            width: 32, 
+                            height: 32, 
+                            bgcolor: '#800000', 
+                            color: '#ffffff', 
+                            fontSize: '0.75rem',
+                            fontWeight: 700
+                          }}>
+                            {mName.split(' ').map(n => n[0]).join('').slice(0, 2)}
                           </Avatar>
-                          <Typography variant="body2" fontWeight={600}>{mName}</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a1a' }}>
+                            {mName}
+                          </Typography>
                         </Box>
                       </TableCell>
-                      <TableCell>{s.studentId || s.memberId}</TableCell>
-                      <TableCell>{s.description || s.event}</TableCell>
-                      <TableCell sx={{ fontWeight: 700, color: 'error.main' }}>
-                        ₱{s.amount || 50}
+                      <TableCell sx={{ py: 2, color: '#555555' }}>
+                        {eventCategory}
                       </TableCell>
-                      <TableCell>{s.processedAt || s.date}</TableCell>
-                      <TableCell>
+                      <TableCell sx={{ py: 2, fontWeight: 700, color: '#800000' }}>
+                        ₱{s.amount || 100}
+                      </TableCell>
+                      <TableCell sx={{ py: 2 }}>
                         <Chip
-                          label={s.status ? s.status.toUpperCase() : 'ABSENT'}
-                          color="error"
-                          variant="outlined"
+                          label="SANCTION"
                           size="small"
+                          sx={{ 
+                            backgroundColor: '#ffebee',
+                            color: '#800000',
+                            fontWeight: 600,
+                            fontSize: '0.75rem'
+                          }}
                         />
+                      </TableCell>
+                      <TableCell sx={{ py: 2 }}>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                              color: '#800000',
+                              borderColor: '#800000',
+                              textTransform: 'none',
+                              fontWeight: 600,
+                              fontSize: '0.8rem',
+                              '&:hover': {
+                                backgroundColor: '#ffebee'
+                              }
+                            }}
+                          >
+                            View
+                          </Button>
+                        </Box>
                       </TableCell>
                     </TableRow>
                   );
                 })}
-                {filteredSanctions.length === 0 && (
+                {paginatedSanctions.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                       No sanctions found.
@@ -157,6 +222,53 @@ function SanctionsList({ sanctions }) {
               </TableBody>
             </Table>
           </TableContainer>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1, mt: 3 }}>
+              <Typography variant="body2" color="text.secondary">
+                Showing {Math.min((page - 1) * itemsPerPage + 1, filteredSanctions.length)} - {Math.min(page * itemsPerPage, filteredSanctions.length)} of {filteredSanctions.length}
+              </Typography>
+              <Stack direction="row" spacing={1}>
+                <Button
+                  size="small"
+                  disabled={page === 1}
+                  onClick={() => setPage(Math.max(1, page - 1))}
+                  sx={{ minWidth: 32, height: 32, p: 0 }}
+                >
+                  ‹
+                </Button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                  <Button
+                    key={p}
+                    size="small"
+                    onClick={() => setPage(p)}
+                    sx={{
+                      minWidth: 32,
+                      height: 32,
+                      p: 0,
+                      backgroundColor: page === p ? '#800000' : 'transparent',
+                      color: page === p ? '#ffffff' : '#1a1a1a',
+                      fontWeight: 600,
+                      '&:hover': {
+                        backgroundColor: page === p ? '#800000' : '#f5f5f5'
+                      }
+                    }}
+                  >
+                    {p}
+                  </Button>
+                ))}
+                <Button
+                  size="small"
+                  disabled={page === totalPages}
+                  onClick={() => setPage(Math.min(totalPages, page + 1))}
+                  sx={{ minWidth: 32, height: 32, p: 0 }}
+                >
+                  ›
+                </Button>
+              </Stack>
+            </Box>
+          )}
         </CardContent>
       </Card>
     </Box>
