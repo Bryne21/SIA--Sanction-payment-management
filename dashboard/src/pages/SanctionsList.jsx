@@ -87,25 +87,24 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
 
   const eventTypeOptions = useMemo(() => {
     // Preferred display order matching screenshot
+    // Order should match screenshot: Seminar, Webinar, Workshop, Meeting, Sports, Social, Other
     const preferred = [
-      'Major Event',
-      'Meeting',
-      'Other',
       'Seminar',
-      'Social',
-      'Special Event',
-      'Sports',
       'Webinar',
-      'Workshop'
+      'Workshop',
+      'Meeting',
+      'Sports',
+      'Social',
+      'Other'
     ];
     // Start with types found in events-data (normalized to display labels).
     // Order them according to `preferred`, and append any extra types afterwards.
     const fromCollection = Array.isArray(eventOptions?.types) ? eventOptions.types.map(t => normalizeEventTypeLabel(t)).filter(Boolean) : [];
     const fromSet = new Set(fromCollection);
     const preferredSet = new Set(preferred);
-    const ordered = preferred.filter(p => fromSet.has(p));
+    // Always show the preferred list in the dropdown (matches screenshot), then append any extra types found in data
     const extras = Array.from(fromSet).filter(t => !preferredSet.has(t)).sort();
-    return [...ordered, ...extras];
+    return [...preferred, ...extras];
   }, [eventOptions, sanctions]);
 
   const uniqueEvents = useMemo(() => {

@@ -9,12 +9,14 @@ import {
   Typography, 
   Avatar, 
   Alert,
-  Container
+  Container,
+  Button
 } from '@mui/material';
 import { getState } from './api/client';
 
 // Import Pages
 import SanctionsList from './pages/SanctionsList';
+const MembersList = React.lazy(() => import('./pages/MembersList'));
 
 const theme = createTheme({
   palette: {
@@ -59,13 +61,16 @@ const theme = createTheme({
 
 function App() {
   const [sanctions, setSanctions] = useState([]);
+  const [members, setMembers] = useState([]);
   const [eventOptions, setEventOptions] = useState({ titles: [], types: [] });
+  const [view, setView] = useState('sanctions');
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
 
   const syncState = () => {
     getState()
       .then(res => {
         setSanctions(res.data.sanctions || []);
+        setMembers(res.data.members || []);
         setEventOptions(res.data.eventOptions || { titles: [], types: [] });
       })
       .catch(err => {
@@ -102,8 +107,10 @@ function App() {
                   Sanction Payment Management
                 </Typography>
               </Box>
-              
-              <Box />
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Button onClick={() => setView('sanctions')} variant={view === 'sanctions' ? 'contained' : 'text'} size="small">Sanctions</Button>
+                <Button onClick={() => setView('members')} variant={view === 'members' ? 'contained' : 'text'} size="small">Members</Button>
+              </Box>
             </Toolbar>
           </Container>
         </AppBar>
@@ -125,7 +132,14 @@ function App() {
             </Alert>
           )}
 
-          <SanctionsList sanctions={sanctions} eventOptions={eventOptions} onSanctionsChange={setSanctions} />
+          {view === 'sanctions' ? (
+            <SanctionsList sanctions={sanctions} eventOptions={eventOptions} onSanctionsChange={setSanctions} />
+          ) : (
+            // lazy load MembersList to avoid importing unless needed
+            <React.Suspense fallback={<div>Loading...</div>}>
+              <MembersList members={members} sanctions={sanctions} eventOptions={eventOptions} />
+            </React.Suspense>
+          )}
         </Container>
       </Box>
     </ThemeProvider>
