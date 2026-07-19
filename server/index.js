@@ -13,6 +13,7 @@ const express = require('express');
 const cors = require('cors');
 const { connectDB } = require('./config/db');
 const apiRoutes = require('./routes/api');
+const { ensureSanctionSeedData } = require('./controllers/sanctionController');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -29,5 +30,10 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Express Sanction Backend running on port ${PORT}`);
 });
 
-connectDB();
+connectDB().then(async () => {
+  const seedResult = await ensureSanctionSeedData();
+  console.log('Sanction seed result:', seedResult);
+}).catch((error) => {
+  console.error('Startup seed failed:', error);
+});
 

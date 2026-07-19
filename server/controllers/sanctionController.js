@@ -8,7 +8,10 @@ const DB_PATH = path.join(__dirname, '..', 'data.json');
 
 const getSanctionCollection = async () => {
   const sanctionCollectionName = 'sanction';
-  return mongoose.connection.db.collection(sanctionCollectionName);
+  const db = mongoose.connection.db;
+  if (!db) return null;
+  await db.createCollection(sanctionCollectionName).catch(() => {});
+  return db.collection(sanctionCollectionName);
 };
 
 const buildSanctionDoc = ({ attendance, member, fineAmount, eventName, eventTitle, resolvedEventType }) => ({
@@ -24,7 +27,9 @@ const buildSanctionDoc = ({ attendance, member, fineAmount, eventName, eventTitl
   event: eventName,
   date: attendance.date || getFormattedDate(),
   processedAt: getFormattedDate(),
-  createdAt: new Date()
+  createdAt: new Date(),
+  paymentStatus: 'unpaid',
+  isPaid: false
 });
 
 const getFormattedDate = () => {
@@ -99,6 +104,98 @@ const getEventOptions = async () => {
 const normalizeString = (value) => {
   if (value === undefined || value === null) return '';
   return String(value).trim().toLowerCase();
+};
+
+const normalizePaymentStatus = (value) => {
+  const normalized = normalizeString(value);
+  if (normalized === 'paid') return 'paid';
+  return 'unpaid';
+};
+
+const buildFallbackSanctionsFromLedger = (parsedData) => {
+  const members = Array.isArray(parsedData?.members) ? parsedData.members : [];
+  const ledgerEntries = Array.isArray(parsedData?.ledger) ? parsedData.ledger : [];
+  const memberMap = new Map(members.map((member) => [member.id, member]));
+
+  return ledgerEntries
+    .filter((entry) => entry?.type === 'fine')
+    .map((entry) => {
+      const member = memberMap.get(entry.memberId) || null;
+      const eventText = entry.event || 'Unexcused Absence';
+      const normalizedEvent = eventText.toLowerCase();
+      let eventType = 'meeting';
+      if (normalizedEvent.includes('special')) eventType = 'special_event';
+      else if (normalizedEvent.includes('major') || normalizedEvent.includes('festival') || normalizedEvent.includes('camp')) eventType = 'major_event';
+
+      return {
+        attendanceId: entry.id || entry.reference || entry.memberId,
+        memberId: entry.memberId,
+        memberName: member?.name || entry.memberId || 'Unknown Member',
+        name: member?.name || entry.memberId || 'Unknown Member',
+        studentId: entry.memberId,
+        status: 'absent',
+        eventType,
+        description: eventText.replace(/^Unexcused Absence - /i, ''),
+        amount: entry.amount || 100,
+        event: eventText,
+        date: entry.date || getFormattedDate(),
+        processedAt: entry.date || getFormattedDate(),
+        createdAt: new Date(),
+        paymentStatus: 'unpaid',
+        isPaid: false
+      };
+    });
+};
+
+const ensureSanctionSeedData = async () => {
+  if (mongoose.connection.readyState !== 1) {
+    return { inserted: 0, updated: 0, skipped: true };
+  }
+
+  try {
+    const sanctionCollection = await getSanctionCollection();
+    if (!sanctionCollection) {
+      return { inserted: 0, updated: 0, skipped: true };
+    }
+
+    const existingCount = await sanctionCollection.countDocuments();
+    if (existingCount > 0) {
+      const updateResult = await sanctionCollection.updateMany(
+        {
+          $or: [
+            { paymentStatus: { $exists: false } },
+            { isPaid: { $exists: false } }
+          ]
+        },
+        {
+          $set: {
+            paymentStatus: 'unpaid',
+            isPaid: false,
+            updatedAt: new Date()
+          }
+        }
+      );
+      return { inserted: 0, updated: updateResult.modifiedCount };
+    }
+
+    if (!fs.existsSync(DB_PATH)) {
+      return { inserted: 0, updated: 0 };
+    }
+
+    const raw = fs.readFileSync(DB_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    const fallbackSanctions = buildFallbackSanctionsFromLedger(parsed);
+
+    if (!fallbackSanctions.length) {
+      return { inserted: 0, updated: 0 };
+    }
+
+    await sanctionCollection.insertMany(fallbackSanctions);
+    return { inserted: fallbackSanctions.length, updated: 0 };
+  } catch (error) {
+    console.warn('Failed to ensure sanction seed data:', error.message);
+    return { inserted: 0, updated: 0, error: error.message };
+  }
 };
 
 const getAttendanceField = (record, ...fields) => {
@@ -266,8 +363,44 @@ const getState = async () => {
     const collectionName = await getAttendanceCollectionName();
     const attendanceCollection = mongoose.connection.db.collection(collectionName);
 
-    // Reconcile/sync manual deletions from attendances
     let sanctions = await sanctionCollection.find().toArray();
+
+    if (!sanctions.length) {
+      try {
+        if (fs.existsSync(DB_PATH)) {
+          const raw = fs.readFileSync(DB_PATH, 'utf8');
+          const parsed = JSON.parse(raw);
+          const fallbackSanctions = buildFallbackSanctionsFromLedger(parsed);
+          if (fallbackSanctions.length > 0) {
+            await sanctionCollection.insertMany(fallbackSanctions);
+            sanctions = await sanctionCollection.find().toArray();
+            console.log(`Seeded ${sanctions.length} sanctions into MongoDB.`);
+          }
+        }
+      } catch (seedErr) {
+        console.warn('Failed to seed fallback sanctions into MongoDB:', seedErr.message);
+      }
+    }
+
+    if (sanctions.length > 0) {
+      const missingPaymentStatus = sanctions.filter((sanction) => sanction.paymentStatus === undefined && sanction.isPaid === undefined);
+      if (missingPaymentStatus.length > 0) {
+        const ids = missingPaymentStatus.map((sanction) => sanction._id);
+        await sanctionCollection.updateMany(
+          { _id: { $in: ids } },
+          {
+            $set: {
+              paymentStatus: 'unpaid',
+              isPaid: false,
+              updatedAt: new Date()
+            }
+          }
+        );
+        sanctions = await sanctionCollection.find().toArray();
+      }
+    }
+
+    // Reconcile/sync manual deletions from attendances
     const attendanceIds = sanctions.map(s => s.attendanceId).filter(Boolean);
 
     const queryIds = [];
@@ -330,7 +463,9 @@ const getState = async () => {
       });
       const cleanSanctions = sanctions.map(({ _id, ...s }) => ({
         ...s,
-        id: _id.toString()
+        id: _id.toString(),
+        paymentStatus: normalizePaymentStatus(s.paymentStatus || (s.isPaid ? 'paid' : 'unpaid')),
+        isPaid: normalizePaymentStatus(s.paymentStatus || (s.isPaid ? 'paid' : 'unpaid')) === 'paid'
       }));
       const eventOptions = await getEventOptions();
       return {
@@ -378,6 +513,53 @@ const handleGetState = async (req, res) => {
   } catch (error) {
     console.error('Error fetching state:', error);
     res.status(500).json({ error: 'Database read failed' });
+  }
+};
+
+const handleUpdateSanctionPaymentStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { paymentStatus } = req.body || {};
+    const normalizedStatus = normalizePaymentStatus(paymentStatus);
+
+    if (!id) {
+      return res.status(400).json({ error: 'Sanction id is required.' });
+    }
+
+    const sanctionCollection = await getSanctionCollection();
+    if (!sanctionCollection) {
+      return res.status(500).json({ error: 'Database connection is not available.' });
+    }
+
+    const query = {
+      $or: [
+        { _id: mongoose.isValidObjectId(id) ? new mongoose.Types.ObjectId(id) : id },
+        { id },
+        { _id: id }
+      ]
+    };
+
+    const result = await sanctionCollection.updateOne(query, {
+      $set: {
+        paymentStatus: normalizedStatus,
+        isPaid: normalizedStatus === 'paid',
+        updatedAt: new Date()
+      }
+    });
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: 'Sanction not found.' });
+    }
+
+    const state = await getState();
+    res.json({
+      message: `Sanction marked as ${normalizedStatus}.`,
+      paymentStatus: normalizedStatus,
+      state
+    });
+  } catch (error) {
+    console.error('Error updating sanction payment status:', error);
+    res.status(500).json({ error: 'Failed to update sanction payment status' });
   }
 };
 
@@ -512,5 +694,7 @@ const handleProcessAttendance = async (req, res) => {
 
 module.exports = {
   handleGetState,
-  handleProcessAttendance
+  handleUpdateSanctionPaymentStatus,
+  handleProcessAttendance,
+  ensureSanctionSeedData
 };

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import apiClient from '../api/client';
 import {
   Box,
   Card,
@@ -14,6 +15,7 @@ import {
   Paper,
   Avatar,
   Chip,
+  Button,
   FormControl,
   InputLabel,
   Select,
@@ -21,12 +23,12 @@ import {
   Stack
 } from '@mui/material';
 
-function SanctionsList({ sanctions, eventOptions = {} }) {
+function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
   const [search, setSearch] = useState('');
   const [eventFilter, setEventFilter] = useState('all');
   const [specificEventFilter, setSpecificEventFilter] = useState('all');
   const [page, setPage] = useState(1);
-  const [paidStatus, setPaidStatus] = useState({});
+  const [updatingSanctionId, setUpdatingSanctionId] = useState(null);
   const itemsPerPage = 6;
 
   const normalizeEventTypeLabel = (value) => {
@@ -96,8 +98,27 @@ function SanctionsList({ sanctions, eventOptions = {} }) {
     return [...new Set([...fromCollection, ...fromRecords, 'Unknown'])].sort();
   }, [eventOptions, sanctions]);
 
+  const getPaymentStatus = (record) => {
+    const raw = record?.paymentStatus || record?.payment_status || (record?.isPaid ? 'paid' : 'unpaid');
+    return String(raw).toLowerCase() === 'paid' ? 'paid' : 'unpaid';
+  };
+
   const uniqueMembersCount = useMemo(() => {
     const memberIds = new Set(sanctions.map(s => s.studentId || s.memberId));
+    return memberIds.size;
+  }, [sanctions]);
+
+  const unpaidSanctionsCount = useMemo(() => {
+    return sanctions.filter((sanction) => getPaymentStatus(sanction) === 'unpaid').length;
+  }, [sanctions]);
+
+  const affectedMembersCount = useMemo(() => {
+    const memberIds = new Set(
+      sanctions
+        .filter((sanction) => getPaymentStatus(sanction) === 'unpaid')
+        .map((sanction) => sanction.studentId || sanction.memberId || sanction.memberName || sanction.name)
+        .filter(Boolean)
+    );
     return memberIds.size;
   }, [sanctions]);
 
@@ -132,14 +153,27 @@ function SanctionsList({ sanctions, eventOptions = {} }) {
     page * itemsPerPage
   );
 
-  const togglePaidStatus = (sanctionId) => {
-    setPaidStatus(prev => ({
-      ...prev,
-      [sanctionId]: !prev[sanctionId]
-    }));
+  const togglePaidStatus = async (sanction) => {
+    const sanctionId = sanction.id || sanction._id;
+    const nextStatus = getPaymentStatus(sanction) === 'paid' ? 'unpaid' : 'paid';
+
+    try {
+      setUpdatingSanctionId(sanctionId);
+      const response = await apiClient.patch(`/api/sanctions/${encodeURIComponent(sanctionId)}/payment-status`, {
+        paymentStatus: nextStatus
+      });
+
+      if (onSanctionsChange) {
+        onSanctionsChange(response.data.state?.sanctions || []);
+      }
+    } catch (error) {
+      console.error('Failed to update sanction payment status:', error);
+    } finally {
+      setUpdatingSanctionId(null);
+    }
   };
 
-  const isPaid = (sanctionId) => paidStatus[sanctionId] || false;
+  const isPaid = (sanction) => getPaymentStatus(sanction) === 'paid';
 
   return (
     <Box sx={{ animation: 'fadeIn 0.3s ease-out' }}>
@@ -157,7 +191,7 @@ function SanctionsList({ sanctions, eventOptions = {} }) {
           <CardContent sx={{ p: 3 }}>
             <Typography variant="caption" color="text.secondary" fontWeight={600}>Total Absences</Typography>
             <Typography variant="h4" color="primary.main" sx={{ mt: 1, fontWeight: 700 }}>
-              {sanctions.length}
+              {unpaidSanctionsCount}
             </Typography>
           </CardContent>
         </Card>
@@ -165,7 +199,7 @@ function SanctionsList({ sanctions, eventOptions = {} }) {
           <CardContent sx={{ p: 3 }}>
             <Typography variant="caption" color="text.secondary" fontWeight={600}>Affected Members</Typography>
             <Typography variant="h4" color="primary.main" sx={{ mt: 1, fontWeight: 700 }}>
-              {uniqueMembersCount}
+              {affectedMembersCount}
             </Typography>
           </CardContent>
         </Card>
@@ -304,12 +338,13 @@ function SanctionsList({ sanctions, eventOptions = {} }) {
                       </TableCell>
                       <TableCell sx={{ py: 2 }}>
                         <Chip
-                          label={isPaid(s.id || s._id) ? "PAID" : "UNPAID"}
+                          label={isPaid(s) ? 'PAID' : 'UNPAID'}
                           size="small"
-                          onClick={() => togglePaidStatus(s.id || s._id)}
+                          onClick={() => togglePaidStatus(s)}
+                          disabled={updatingSanctionId === (s.id || s._id)}
                           sx={{ 
-                            backgroundColor: isPaid(s.id || s._id) ? '#c8e6c9' : '#ffebee',
-                            color: isPaid(s.id || s._id) ? '#2e7d32' : '#800000',
+                            backgroundColor: isPaid(s) ? '#c8e6c9' : '#ffebee',
+                            color: isPaid(s) ? '#2e7d32' : '#800000',
                             fontWeight: 600,
                             fontSize: '0.75rem',
                             cursor: 'pointer',

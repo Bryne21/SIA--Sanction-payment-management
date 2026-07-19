@@ -127,7 +127,7 @@ function App() {
             </Alert>
           )}
 
-          <SanctionsList sanctions={sanctions} eventOptions={eventOptions} />
+          <SanctionsList sanctions={sanctions} eventOptions={eventOptions} onSanctionsChange={setSanctions} />
         </Container>
       </Box>
     </ThemeProvider>
