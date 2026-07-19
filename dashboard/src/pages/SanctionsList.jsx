@@ -18,7 +18,6 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Button,
   Stack
 } from '@mui/material';
 
@@ -34,6 +33,11 @@ function SanctionsList({ sanctions }) {
     if (text.includes('micro seminar') || text.includes('microseminar')) return 'Micro Seminar';
     return 'Other';
   };
+
+  const uniqueMembersCount = useMemo(() => {
+    const memberIds = new Set(sanctions.map(s => s.studentId || s.memberId));
+    return memberIds.size;
+  }, [sanctions]);
 
   const filteredSanctions = useMemo(() => {
     let result = sanctions;
@@ -64,6 +68,34 @@ function SanctionsList({ sanctions }) {
 
   return (
     <Box sx={{ animation: 'fadeIn 0.3s ease-out' }}>
+      {/* Summary Metrics */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: 4 }}>
+        <Card sx={{ border: '1px solid #eeeeee', boxShadow: 'none', backgroundColor: '#ffffff', borderRadius: 2 }}>
+          <CardContent sx={{ p: 3 }}>
+            <Typography variant="caption" color="text.secondary" fontWeight={600}>Total Recorded Sanctions</Typography>
+            <Typography variant="h4" color="primary.main" sx={{ mt: 1, fontWeight: 700 }}>
+              {sanctions.length}
+            </Typography>
+          </CardContent>
+        </Card>
+        <Card sx={{ border: '1px solid #eeeeee', boxShadow: 'none', backgroundColor: '#ffffff', borderRadius: 2 }}>
+          <CardContent sx={{ p: 3 }}>
+            <Typography variant="caption" color="text.secondary" fontWeight={600}>Total Absences</Typography>
+            <Typography variant="h4" color="primary.main" sx={{ mt: 1, fontWeight: 700 }}>
+              {sanctions.length}
+            </Typography>
+          </CardContent>
+        </Card>
+        <Card sx={{ border: '1px solid #eeeeee', boxShadow: 'none', backgroundColor: '#ffffff', borderRadius: 2 }}>
+          <CardContent sx={{ p: 3 }}>
+            <Typography variant="caption" color="text.secondary" fontWeight={600}>Affected Members</Typography>
+            <Typography variant="h4" color="primary.main" sx={{ mt: 1, fontWeight: 700 }}>
+              {uniqueMembersCount}
+            </Typography>
+          </CardContent>
+        </Card>
+      </Box>
+
       {/* Main Card */}
       <Card sx={{ 
         border: '1px solid #eeeeee', 
@@ -140,9 +172,6 @@ function SanctionsList({ sanctions }) {
                   <TableCell sx={{ fontWeight: 700, color: '#1a1a1a', borderBottom: '2px solid #eeeeee' }}>
                     Status
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: '#1a1a1a', borderBottom: '2px solid #eeeeee' }}>
-                    Actions
-                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -189,32 +218,12 @@ function SanctionsList({ sanctions }) {
                           }}
                         />
                       </TableCell>
-                      <TableCell sx={{ py: 2 }}>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            sx={{
-                              color: '#800000',
-                              borderColor: '#800000',
-                              textTransform: 'none',
-                              fontWeight: 600,
-                              fontSize: '0.8rem',
-                              '&:hover': {
-                                backgroundColor: '#ffebee'
-                              }
-                            }}
-                          >
-                            View
-                          </Button>
-                        </Box>
-                      </TableCell>
                     </TableRow>
                   );
                 })}
                 {paginatedSanctions.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                    <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                       No sanctions found.
                     </TableCell>
                   </TableRow>

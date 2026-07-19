@@ -90,18 +90,19 @@ function App() {
           <Container maxWidth="lg">
             <Toolbar sx={{ justifyContent: 'space-between', p: '0 !important' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Avatar sx={{ bgcolor: 'primary.main', color: '#fff', fontWeight: 800 }}>₱</Avatar>
+                <Box
+                  component="img"
+                  src="/logo.png"
+                  alt="SIA Logo"
+                  sx={{ height: 48, width: 48, objectFit: 'contain' }}
+                />
                 <Typography variant="h6" sx={{ fontWeight: 800, color: 'primary.main', fontFamily: '"Outfit", sans-serif' }}>
                   SanctionPay
                 </Typography>
               </Box>
               
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Avatar sx={{ bgcolor: 'primary.main', color: '#fff', width: 32, height: 32, fontSize: '0.85rem' }}>AD</Avatar>
-                <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-                  <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2 }}>Alex Diaz</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.2 }}>Sanction Manager</Typography>
-                </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'right' }}>Sanction Manager</Typography>
               </Box>
             </Toolbar>
           </Container>
