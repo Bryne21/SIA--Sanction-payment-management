@@ -2,18 +2,14 @@ import axios from 'axios';
 
 // Determine API base URL
 const getApiBaseUrl = () => {
-  // In production (Render), use the environment variable
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
-  }
-  
-  // In development, use relative paths (Vite proxy will handle it)
+  // In development, use relative paths (Vite proxy handles it)
   if (import.meta.env.DEV) {
     return '';
   }
   
-  // Fallback to current origin
-  return window.location.origin;
+  // In production, use Vercel rewrites (which forward to Render backend)
+  // Vercel's vercel.json handles routing /api/* to the Render backend
+  return '';
 };
 
 const apiClient = axios.create({

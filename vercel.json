@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://sia-sanction-payment-management.onrender.com/api/:path*"
+      "destination": "https://sanction-backend.onrender.com/api/:path*"
     }
   ]
 }
