@@ -98,13 +98,14 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
       'Webinar',
       'Workshop'
     ];
-
-    // Start with types found in events-data (normalized to display labels), but
-    // ensure we include any of the preferred labels even if not present.
+    // Start with types found in events-data (normalized to display labels).
+    // Order them according to `preferred`, and append any extra types afterwards.
     const fromCollection = Array.isArray(eventOptions?.types) ? eventOptions.types.map(t => normalizeEventTypeLabel(t)).filter(Boolean) : [];
-    const set = new Set(fromCollection);
-    preferred.forEach(p => set.add(p));
-    return [...preferred.filter(p => set.has(p))];
+    const fromSet = new Set(fromCollection);
+    const preferredSet = new Set(preferred);
+    const ordered = preferred.filter(p => fromSet.has(p));
+    const extras = Array.from(fromSet).filter(t => !preferredSet.has(t)).sort();
+    return [...ordered, ...extras];
   }, [eventOptions, sanctions]);
 
   const uniqueEvents = useMemo(() => {
