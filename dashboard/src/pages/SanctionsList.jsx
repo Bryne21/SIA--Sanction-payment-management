@@ -182,7 +182,7 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
       });
 
       if (onSanctionsChange) {
-        onSanctionsChange(response.data.state?.sanctions || []);
+        onSanctionsChange(response.data.state?.sanctions || [], response.data.state);
       }
     } catch (error) {
       console.error('Failed to update sanction payment status:', error);

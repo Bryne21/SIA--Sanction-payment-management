@@ -133,7 +133,15 @@ function App() {
           )}
 
           {view === 'sanctions' ? (
-            <SanctionsList sanctions={sanctions} eventOptions={eventOptions} onSanctionsChange={setSanctions} />
+            <SanctionsList sanctions={sanctions} eventOptions={eventOptions} onSanctionsChange={(newSanctions, fullState) => {
+              if (fullState) {
+                setSanctions(fullState.sanctions || []);
+                setMembers(fullState.members || []);
+                setEventOptions(fullState.eventOptions || { titles: [], types: [] });
+              } else {
+                setSanctions(newSanctions);
+              }
+            }} />
           ) : (
             // lazy load MembersList to avoid importing unless needed
             <React.Suspense fallback={<div>Loading...</div>}>

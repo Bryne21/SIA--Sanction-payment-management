@@ -14,7 +14,7 @@ const getSanctionCollection = async () => {
   return db.collection(sanctionCollectionName);
 };
 
-const buildSanctionDoc = ({ attendance, member, fineAmount, eventName, eventTitle, resolvedEventType }) => {
+const buildSanctionDoc = ({ attendance, member, fineAmount, eventName, eventTitle, resolvedEventType, paymentStatus, isPaid }) => {
   const memberIdFromAttendance = attendance.memberId || attendance.member_id || attendance.studentId || attendance.student_id || attendance.studentNumber || attendance.studentNo || '';
   const memberNameFromAttendance = attendance.memberName || attendance.name || memberIdFromAttendance || 'Unknown Member';
   const studentIdFromAttendance = attendance.studentId || attendance.student_id || attendance.studentNumber || attendance.studentNo || memberIdFromAttendance || '';
@@ -34,8 +34,8 @@ const buildSanctionDoc = ({ attendance, member, fineAmount, eventName, eventTitl
     date: attendance.date || getFormattedDate(),
     processedAt: getFormattedDate(),
     createdAt: new Date(),
-    paymentStatus: 'unpaid',
-    isPaid: false
+    paymentStatus: paymentStatus !== undefined ? paymentStatus : 'unpaid',
+    isPaid: isPaid !== undefined ? isPaid : false
   };
 };
 
@@ -335,7 +335,16 @@ const syncAttendanceAbsencesToSanctions = async ({ fromDate, toDate, status, eve
         { _id: existingSanction._id },
         {
           $set: {
-            ...buildSanctionDoc({ attendance, member, fineAmount, eventName, eventTitle, resolvedEventType: useType }),
+            ...buildSanctionDoc({
+              attendance,
+              member,
+              fineAmount,
+              eventName,
+              eventTitle,
+              resolvedEventType: useType,
+              paymentStatus: existingSanction.paymentStatus,
+              isPaid: existingSanction.isPaid
+            }),
             updatedAt: new Date()
           }
         }
@@ -586,10 +595,35 @@ const handleUpdateSanctionPaymentStatus = async (req, res) => {
       ]
     };
 
+    const existingSanction = await sanctionCollection.findOne(query);
+    if (!existingSanction) {
+      return res.status(404).json({ error: 'Sanction not found.' });
+    }
+
+    const oldStatus = existingSanction.paymentStatus === 'paid' ? 'paid' : 'unpaid';
+    const newStatus = normalizedStatus;
+
+    if (oldStatus !== newStatus) {
+      if (existingSanction.memberId) {
+        const member = await Member.findOne({ id: existingSanction.memberId });
+        if (member) {
+          const amount = existingSanction.amount || 100;
+          if (newStatus === 'paid') {
+            member.balance = Math.max(0, (member.balance || 0) - amount);
+            member.totalPaid = (member.totalPaid || 0) + amount;
+          } else {
+            member.balance = (member.balance || 0) + amount;
+            member.totalPaid = Math.max(0, (member.totalPaid || 0) - amount);
+          }
+          await member.save();
+        }
+      }
+    }
+
     const result = await sanctionCollection.updateOne(query, {
       $set: {
-        paymentStatus: normalizedStatus,
-        isPaid: normalizedStatus === 'paid',
+        paymentStatus: newStatus,
+        isPaid: newStatus === 'paid',
         updatedAt: new Date()
       }
     });
@@ -600,8 +634,8 @@ const handleUpdateSanctionPaymentStatus = async (req, res) => {
 
     const state = await getState();
     res.json({
-      message: `Sanction marked as ${normalizedStatus}.`,
-      paymentStatus: normalizedStatus,
+      message: `Sanction marked as ${newStatus}.`,
+      paymentStatus: newStatus,
       state
     });
   } catch (error) {
