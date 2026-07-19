@@ -10,9 +10,8 @@ services:
       - key: PORT
         fromPort: true
       - key: MONGODB_URI
-        # IMPORTANT: Replace with your MongoDB Atlas connection string
+        # IMPORTANT: Set this in Render dashboard Environment tab
         # Format: mongodb+srv://username:password@cluster.mongodb.net/sanction_payment?retryWrites=true&w=majority
-        # Get this from MongoDB Atlas dashboard
         sync: false
 
   - type: static
@@ -21,6 +20,5 @@ services:
     staticPublishPath: dashboard/dist
     envVars:
       - key: VITE_API_BASE_URL
-        # Set to your backend service URL (e.g., https://sanction-backend.onrender.com)
+        value: https://sanction-backend.onrender.com
         sync: false
-
