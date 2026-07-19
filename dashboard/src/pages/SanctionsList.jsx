@@ -56,6 +56,8 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
       .join(' ');
   };
 
+  const normalizeForCompare = (v) => String(v || '').toLowerCase().trim();
+
   const getEventCategory = (record) => {
     const explicitType = normalizeEventTypeLabel(record?.eventType || record?.type || record?.event?.type || '');
     if (explicitType) return explicitType;
@@ -84,19 +86,35 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
   };
 
   const eventTypeOptions = useMemo(() => {
-    const fromCollection = Array.isArray(eventOptions?.types) ? eventOptions.types.filter(Boolean) : [];
-    const fromRecords = sanctions
-      .map((record) => getEventCategory(record))
-      .filter(Boolean);
+    // Preferred display order matching screenshot
+    const preferred = [
+      'Major Event',
+      'Meeting',
+      'Other',
+      'Seminar',
+      'Social',
+      'Special Event',
+      'Sports',
+      'Webinar',
+      'Workshop'
+    ];
 
-    return [...new Set([...fromCollection, ...fromRecords, 'Seminar', 'Webinar', 'Workshop', 'Meeting', 'Sports', 'Social', 'Other', 'Major Event', 'Special Event'])].sort();
+    // Start with types found in events-data (normalized to display labels), but
+    // ensure we include any of the preferred labels even if not present.
+    const fromCollection = Array.isArray(eventOptions?.types) ? eventOptions.types.map(t => normalizeEventTypeLabel(t)).filter(Boolean) : [];
+    const set = new Set(fromCollection);
+    preferred.forEach(p => set.add(p));
+    return [...preferred.filter(p => set.has(p))];
   }, [eventOptions, sanctions]);
 
   const uniqueEvents = useMemo(() => {
+    // Only show titles that exist in the events-data collection
     const fromCollection = Array.isArray(eventOptions?.titles) ? eventOptions.titles.filter(Boolean) : [];
-    const fromRecords = sanctions.map((record) => getEventTitleValue(record)).filter(Boolean);
-    return [...new Set([...fromCollection, ...fromRecords, 'Unknown'])].sort();
+    const titlesSet = new Set(fromCollection);
+    return [...titlesSet].sort();
   }, [eventOptions, sanctions]);
+
+  
 
   const getPaymentStatus = (record) => {
     const raw = record?.paymentStatus || record?.payment_status || (record?.isPaid ? 'paid' : 'unpaid');
@@ -137,7 +155,7 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
     }
 
     if (eventFilter !== 'all') {
-      result = result.filter(s => getEventCategory(s) === eventFilter);
+      result = result.filter(s => normalizeForCompare(getEventCategory(s)) === normalizeForCompare(eventFilter));
     }
 
     if (specificEventFilter !== 'all') {
@@ -203,6 +221,7 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
             </Typography>
           </CardContent>
         </Card>
+        
       </Box>
 
       {/* Main Card */}
@@ -297,6 +316,9 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
                     Event
                   </TableCell>
                   <TableCell sx={{ fontWeight: 700, color: '#1a1a1a', borderBottom: '2px solid #eeeeee' }}>
+                    Event Type
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 700, color: '#1a1a1a', borderBottom: '2px solid #eeeeee' }}>
                     Fine Amount
                   </TableCell>
                   <TableCell sx={{ fontWeight: 700, color: '#1a1a1a', borderBottom: '2px solid #eeeeee' }}>
@@ -331,7 +353,10 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
                         </Box>
                       </TableCell>
                       <TableCell sx={{ py: 2, color: '#555555' }}>
-                        {eventCategory}
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{getEventTitleValue(s) || 'Unknown Event'}</Typography>
+                      </TableCell>
+                      <TableCell sx={{ py: 2, color: '#555555' }}>
+                        <Chip label={getEventCategory(s)} size="small" sx={{ fontWeight: 700, backgroundColor: '#f5f5f5' }} />
                       </TableCell>
                       <TableCell sx={{ py: 2, fontWeight: 700, color: '#800000' }}>
                         ₱{s.amount || 100}

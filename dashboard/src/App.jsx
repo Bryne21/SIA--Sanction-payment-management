@@ -99,13 +99,11 @@ function App() {
                   sx={{ height: 48, width: 48, objectFit: 'contain' }}
                 />
                 <Typography variant="h6" sx={{ fontWeight: 800, color: 'primary.main', fontFamily: '"Outfit", sans-serif' }}>
-                  SanctionPay
+                  Sanction Payment Management
                 </Typography>
               </Box>
               
-              <Box>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'right' }}>Sanction Manager</Typography>
-              </Box>
+              <Box />
             </Toolbar>
           </Container>
         </AppBar>
