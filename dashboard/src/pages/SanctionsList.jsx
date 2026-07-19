@@ -29,8 +29,12 @@ function SanctionsList({ sanctions }) {
 
   const getEventCategory = (record) => {
     const text = `${record.description || ''} ${record.event || ''}`.toLowerCase();
-    if (text.includes('jpice')) return 'JPICE Seminar';
-    if (text.includes('micro seminar') || text.includes('microseminar')) return 'Micro Seminar';
+    if (text.includes('seminar') || text.includes('jpice') || text.includes('micro seminar')) return 'Seminar';
+    if (text.includes('webinar')) return 'Webinar';
+    if (text.includes('workshop')) return 'Workshop';
+    if (text.includes('meeting')) return 'Meeting';
+    if (text.includes('sports') || text.includes('game') || text.includes('athletic')) return 'Sports';
+    if (text.includes('social') || text.includes('gathering') || text.includes('party')) return 'Social';
     return 'Other';
   };
 
@@ -140,9 +144,14 @@ function SanctionsList({ sanctions }) {
                   setPage(1);
                 }}
               >
-                <MenuItem value="all">All Events</MenuItem>
-                <MenuItem value="JPICE Seminar">JPICE Seminar</MenuItem>
-                <MenuItem value="Micro Seminar">Micro Seminar</MenuItem>
+                <MenuItem value="all">All Types</MenuItem>
+                <MenuItem value="Seminar">Seminar</MenuItem>
+                <MenuItem value="Webinar">Webinar</MenuItem>
+                <MenuItem value="Workshop">Workshop</MenuItem>
+                <MenuItem value="Meeting">Meeting</MenuItem>
+                <MenuItem value="Sports">Sports</MenuItem>
+                <MenuItem value="Social">Social</MenuItem>
+                <MenuItem value="Other">Other</MenuItem>
               </Select>
             </FormControl>
           </Box>
