@@ -14,23 +14,30 @@ const getSanctionCollection = async () => {
   return db.collection(sanctionCollectionName);
 };
 
-const buildSanctionDoc = ({ attendance, member, fineAmount, eventName, eventTitle, resolvedEventType }) => ({
-  attendanceId: attendance.attendanceId || attendance._id,
-  memberId: member.id,
-  memberName: member.name,
-  name: member.name,
-  studentId: attendance.studentId || attendance.student_id || attendance.studentNumber || attendance.studentNo || '',
-  status: normalizeString(attendance.status || attendance.state) || 'absent',
-  eventType: resolvedEventType || attendance.eventType || attendance.event_type || 'meeting',
-  description: eventTitle || attendance.description || attendance.notes || attendance.detail || '',
-  amount: fineAmount || 100,
-  event: eventName,
-  date: attendance.date || getFormattedDate(),
-  processedAt: getFormattedDate(),
-  createdAt: new Date(),
-  paymentStatus: 'unpaid',
-  isPaid: false
-});
+const buildSanctionDoc = ({ attendance, member, fineAmount, eventName, eventTitle, resolvedEventType }) => {
+  const memberIdFromAttendance = attendance.memberId || attendance.member_id || attendance.studentId || attendance.student_id || attendance.studentNumber || attendance.studentNo || '';
+  const memberNameFromAttendance = attendance.memberName || attendance.name || memberIdFromAttendance || 'Unknown Member';
+  const studentIdFromAttendance = attendance.studentId || attendance.student_id || attendance.studentNumber || attendance.studentNo || memberIdFromAttendance || '';
+  const resolvedMember = member || { id: memberIdFromAttendance, name: memberNameFromAttendance, studentId: studentIdFromAttendance };
+
+  return {
+    attendanceId: attendance.attendanceId || attendance._id,
+    memberId: resolvedMember.id || memberIdFromAttendance,
+    memberName: resolvedMember.name || memberNameFromAttendance,
+    name: resolvedMember.name || memberNameFromAttendance,
+    studentId: resolvedMember.studentId || studentIdFromAttendance,
+    status: normalizeString(attendance.status || attendance.state) || 'absent',
+    eventType: resolvedEventType || attendance.eventType || attendance.event_type || 'meeting',
+    description: eventTitle || attendance.description || attendance.notes || attendance.detail || '',
+    amount: fineAmount || 100,
+    event: eventName,
+    date: attendance.date || getFormattedDate(),
+    processedAt: getFormattedDate(),
+    createdAt: new Date(),
+    paymentStatus: 'unpaid',
+    isPaid: false
+  };
+};
 
 const getFormattedDate = () => {
   const now = new Date();
@@ -178,20 +185,8 @@ const ensureSanctionSeedData = async () => {
       return { inserted: 0, updated: updateResult.modifiedCount };
     }
 
-    if (!fs.existsSync(DB_PATH)) {
-      return { inserted: 0, updated: 0 };
-    }
-
-    const raw = fs.readFileSync(DB_PATH, 'utf8');
-    const parsed = JSON.parse(raw);
-    const fallbackSanctions = buildFallbackSanctionsFromLedger(parsed);
-
-    if (!fallbackSanctions.length) {
-      return { inserted: 0, updated: 0 };
-    }
-
-    await sanctionCollection.insertMany(fallbackSanctions);
-    return { inserted: fallbackSanctions.length, updated: 0 };
+    const syncResult = await syncAttendanceAbsencesToSanctions({ markProcessed: true });
+    return { inserted: syncResult.processed, updated: 0, deleted: syncResult.deleted, skipped: syncResult.skipped };
   } catch (error) {
     console.warn('Failed to ensure sanction seed data:', error.message);
     return { inserted: 0, updated: 0, error: error.message };
@@ -216,6 +211,48 @@ const getAttendanceCollectionName = async () => {
   return candidates[0];
 };
 
+const findMemberForAttendance = async (attendance, warnings = []) => {
+  const memberRef = getAttendanceField(attendance, 'member', 'memberId', 'member_id', 'memberid');
+  const studentIdValue = getAttendanceField(attendance, 'studentId', 'student_id', 'studentId', 'studentNumber', 'studentNo');
+
+  if (!memberRef && !studentIdValue) {
+    warnings.push(`Skipping attendance record ${attendance.attendanceId || attendance._id} because no memberId or studentId was provided.`);
+    return { member: null, warning: true };
+  }
+
+  let member = null;
+  if (memberRef) {
+    if (mongoose.isValidObjectId(memberRef)) {
+      member = await Member.findById(memberRef);
+    }
+    if (!member) {
+      member = await Member.findOne({ id: String(memberRef).trim() });
+    }
+  }
+  if (!member && studentIdValue) {
+    member = await Member.findOne({ studentId: String(studentIdValue).trim() });
+  }
+  if (!member && attendance.memberName) {
+    member = await Member.findOne({ name: String(attendance.memberName).trim() });
+  }
+
+  if (!member) {
+    const fallbackId = memberRef || studentIdValue || attendance.memberName || '';
+    const fallbackName = attendance.memberName || attendance.name || fallbackId || 'Unknown Member';
+    const fallbackStudentId = studentIdValue || fallbackId;
+    return {
+      member: {
+        id: fallbackId,
+        name: fallbackName,
+        studentId: fallbackStudentId
+      },
+      warning: false
+    };
+  }
+
+  return { member, warning: false };
+};
+
 const isAbsentAttendance = (record, statusOverride) => {
   const statusValue = normalizeString(getAttendanceField(record, 'status', 'attendanceStatus', 'attendance_status', 'state'));
   const presentValue = getAttendanceField(record, 'present');
@@ -236,16 +273,10 @@ const isAbsentAttendance = (record, statusOverride) => {
   return absentValues.includes(statusValue);
 };
 
-const processAttendanceRecords = async ({ fromDate, toDate, status, eventType } = {}) => {
+const syncAttendanceAbsencesToSanctions = async ({ fromDate, toDate, status, eventType, markProcessed = true } = {}) => {
   const validEventTypes = ['meeting', 'major_event', 'special_event'];
 
-  const filter = {
-    $or: [
-      { processed: false },
-      { processed: { $exists: false } }
-    ]
-  };
-
+  const filter = {};
   if (fromDate || toDate) {
     filter.date = {};
     if (fromDate) filter.date.$gte = fromDate;
@@ -253,50 +284,29 @@ const processAttendanceRecords = async ({ fromDate, toDate, status, eventType } 
   }
 
   const collectionName = await getAttendanceCollectionName();
-  const attendanceRecords = await mongoose.connection.db.collection(collectionName).find(filter).toArray();
-  const filteredRecords = attendanceRecords.filter(record => isAbsentAttendance(record, status));
-  if (!filteredRecords.length) {
-    return { processed: 0, skipped: 0, warnings: [] };
-  }
-
   const attendanceCollection = mongoose.connection.db.collection(collectionName);
   const sanctionCollection = await getSanctionCollection();
-  const processedCount = { success: 0, skipped: 0 };
+  const attendanceRecords = await attendanceCollection.find(filter).toArray();
+  const filteredRecords = attendanceRecords.filter(record => isAbsentAttendance(record, status));
+  const processedCount = { success: 0, skipped: 0, deleted: 0 };
   const warnings = [];
-  const attendanceUpdates = [];
+  const writes = [];
   const memberSaves = [];
-  const sanctionCreates = [];
+
+  const absentAttendanceIds = new Set(filteredRecords.map((record) => String(record.attendanceId || record._id || '')).filter(Boolean));
+  const attendanceById = new Map(attendanceRecords.map((record) => [String(record.attendanceId || record._id || ''), record]));
+  const existingSanctions = await sanctionCollection.find({}).toArray();
+  const existingSanctionByKey = new Map(existingSanctions.map((sanction) => [String(sanction.attendanceId || ''), sanction]));
 
   for (const attendance of filteredRecords) {
-    const memberRef = getAttendanceField(attendance, 'member', 'memberId', 'member_id', 'memberid');
-    const studentIdValue = getAttendanceField(attendance, 'studentId', 'student_id', 'studentId', 'studentNumber', 'studentNo');
-
-    if (!memberRef && !studentIdValue) {
-      warnings.push(`Skipping attendance record ${attendance.attendanceId || attendance._id} because no memberId or studentId was provided.`);
+    const { member, warning } = await findMemberForAttendance(attendance, warnings);
+    if (warning || !member) {
       processedCount.skipped += 1;
       continue;
     }
 
-    let member = null;
-    if (memberRef) {
-      if (mongoose.isValidObjectId(memberRef)) {
-        member = await Member.findById(memberRef);
-      }
-      if (!member) {
-        member = await Member.findOne({ id: String(memberRef).trim() });
-      }
-    }
-    if (!member && studentIdValue) {
-      member = await Member.findOne({ studentId: String(studentIdValue).trim() });
-    }
-    if (!member && attendance.memberName) {
-      member = await Member.findOne({ name: String(attendance.memberName).trim() });
-    }
-    if (!member) {
-      warnings.push(`Member not found for attendance record ${attendance.attendanceId || attendance._id} (${memberRef || studentIdValue || attendance.memberName}).`);
-      processedCount.skipped += 1;
-      continue;
-    }
+    const attendanceKey = String(attendance.attendanceId || attendance._id || '');
+    const existingSanction = existingSanctionByKey.get(attendanceKey);
 
     let eventDoc = null;
     const eventRef = getAttendanceField(attendance, 'event', 'eventId', 'event_id');
@@ -320,20 +330,33 @@ const processAttendanceRecords = async ({ fromDate, toDate, status, eventType } 
     const descriptionValue = eventTitle || getAttendanceField(attendance, 'description', 'notes', 'detail') || '';
     const eventName = `Unexcused Absence - ${eventLabel}${descriptionValue ? ` (${descriptionValue})` : ''}`;
 
-    member.balance += fineAmount;
-    memberSaves.push(member.save());
+    if (existingSanction) {
+      writes.push(sanctionCollection.updateOne(
+        { _id: existingSanction._id },
+        {
+          $set: {
+            ...buildSanctionDoc({ attendance, member, fineAmount, eventName, eventTitle, resolvedEventType: useType }),
+            updatedAt: new Date()
+          }
+        }
+      ));
+    } else {
+      if (member && typeof member.save === 'function' && member.balance !== undefined) {
+        member.balance += fineAmount;
+        memberSaves.push(member.save());
+      }
+      writes.push(sanctionCollection.insertOne(buildSanctionDoc({
+        attendance,
+        member,
+        fineAmount,
+        eventName,
+        eventTitle,
+        resolvedEventType: useType
+      })));
+    }
 
-    sanctionCreates.push(sanctionCollection.insertOne(buildSanctionDoc({
-      attendance,
-      member,
-      fineAmount,
-      eventName,
-      eventTitle,
-      resolvedEventType: useType
-    })));
-
-    attendanceUpdates.push(
-      attendanceCollection.updateOne(
+    if (markProcessed) {
+      writes.push(attendanceCollection.updateOne(
         { _id: attendance._id },
         {
           $set: {
@@ -342,13 +365,40 @@ const processAttendanceRecords = async ({ fromDate, toDate, status, eventType } 
             memberId: member.id
           }
         }
-      )
-    );
+      ));
+    }
     processedCount.success += 1;
   }
 
-  await Promise.all([...memberSaves, ...sanctionCreates, ...attendanceUpdates]);
-  return { processed: processedCount.success, skipped: processedCount.skipped, warnings };
+  for (const sanction of existingSanctions) {
+    const sanctionKey = String(sanction.attendanceId || '');
+    if (sanctionKey && absentAttendanceIds.has(sanctionKey)) {
+      continue;
+    }
+
+    const attendance = attendanceById.get(sanctionKey);
+    if (attendance && isAbsentAttendance(attendance, status)) {
+      continue;
+    }
+
+    if (sanction.memberId) {
+      const member = await Member.findOne({ id: sanction.memberId });
+      if (member) {
+        member.balance = Math.max(0, member.balance - (sanction.amount || 100));
+        memberSaves.push(member.save());
+      }
+    }
+
+    writes.push(sanctionCollection.deleteOne({ _id: sanction._id }));
+    processedCount.deleted += 1;
+  }
+
+  await Promise.all([...memberSaves, ...writes]);
+  return { processed: processedCount.success, skipped: processedCount.skipped, deleted: processedCount.deleted, warnings };
+};
+
+const processAttendanceRecords = async ({ fromDate, toDate, status, eventType } = {}) => {
+  return syncAttendanceAbsencesToSanctions({ fromDate, toDate, status, eventType });
 };
 
 const getState = async () => {
@@ -357,7 +407,7 @@ const getState = async () => {
       throw new Error('mongoose-not-connected');
     }
 
-    await processAttendanceRecords();
+    await syncAttendanceAbsencesToSanctions();
 
     const sanctionCollection = await getSanctionCollection();
     const collectionName = await getAttendanceCollectionName();
@@ -447,33 +497,30 @@ const getState = async () => {
     }
 
     const members = await Member.find().lean();
-
-    if (Array.isArray(members) && members.length > 0) {
-      const cleanMembers = members.map(({ _id, __v, ...m }) => {
-        const id = m.id || m.studentId || _id.toString();
-        const name = m.name || [m.firstName, m.lastName].filter(Boolean).join(' ') || 'Unnamed Member';
-        return {
-          ...m,
-          id,
-          name,
-          balance: m.balance !== undefined ? m.balance : 0,
-          totalPaid: m.totalPaid !== undefined ? m.totalPaid : 0,
-          standing: m.standing || 'Good Standing'
-        };
-      });
-      const cleanSanctions = sanctions.map(({ _id, ...s }) => ({
-        ...s,
-        id: _id.toString(),
-        paymentStatus: normalizePaymentStatus(s.paymentStatus || (s.isPaid ? 'paid' : 'unpaid')),
-        isPaid: normalizePaymentStatus(s.paymentStatus || (s.isPaid ? 'paid' : 'unpaid')) === 'paid'
-      }));
-      const eventOptions = await getEventOptions();
+    const cleanMembers = (Array.isArray(members) ? members : []).map(({ _id, __v, ...m }) => {
+      const id = m.id || m.studentId || _id.toString();
+      const name = m.name || [m.firstName, m.lastName].filter(Boolean).join(' ') || 'Unnamed Member';
       return {
-        members: cleanMembers,
-        sanctions: cleanSanctions,
-        eventOptions
+        ...m,
+        id,
+        name,
+        balance: m.balance !== undefined ? m.balance : 0,
+        totalPaid: m.totalPaid !== undefined ? m.totalPaid : 0,
+        standing: m.standing || 'Good Standing'
       };
-    }
+    });
+    const cleanSanctions = sanctions.map(({ _id, ...s }) => ({
+      ...s,
+      id: _id.toString(),
+      paymentStatus: normalizePaymentStatus(s.paymentStatus || (s.isPaid ? 'paid' : 'unpaid')),
+      isPaid: normalizePaymentStatus(s.paymentStatus || (s.isPaid ? 'paid' : 'unpaid')) === 'paid'
+    }));
+    const eventOptions = await getEventOptions();
+    return {
+      members: cleanMembers,
+      sanctions: cleanSanctions,
+      eventOptions
+    };
   } catch (err) {
     if (err && err.message === 'mongoose-not-connected') {
       console.warn('getState: mongoose not connected, using data.json fallback');
@@ -568,12 +615,7 @@ const handleProcessAttendance = async (req, res) => {
   const validEventTypes = ['meeting', 'major_event', 'special_event'];
 
   try {
-    const filter = {
-      $or: [
-        { processed: false },
-        { processed: { $exists: false } }
-      ]
-    };
+    const filter = {};
     if (eventType) filter.eventType = eventType;
     if (fromDate || toDate) {
       filter.date = {};
@@ -586,104 +628,18 @@ const handleProcessAttendance = async (req, res) => {
     const attendanceRecords = await attendanceCollection.find(filter).toArray();
     const filteredRecords = attendanceRecords.filter(record => isAbsentAttendance(record));
     if (!filteredRecords.length) {
-      return res.json({ message: 'No unprocessed attendance absences found.', processed: 0, skipped: 0, warnings: [] });
+      return res.json({ message: 'No absent attendance records found.', processed: 0, skipped: 0, warnings: [] });
     }
 
-    const sanctionCollection = await getSanctionCollection();
-    const processedCount = { success: 0, skipped: 0 };
-    const warnings = [];
-    const attendanceUpdates = [];
-    const memberSaves = [];
-    const sanctionCreates = [];
-
-    for (const attendance of filteredRecords) {
-      const memberRef = getAttendanceField(attendance, 'member', 'memberId', 'member_id', 'memberid');
-      const studentIdValue = getAttendanceField(attendance, 'studentId', 'student_id', 'studentId', 'studentNumber', 'studentNo');
-
-      if (!memberRef && !studentIdValue) {
-        warnings.push(`Skipping attendance record ${attendance.attendanceId || attendance._id} because no memberId or studentId was provided.`);
-        processedCount.skipped += 1;
-        continue;
-      }
-
-      let member = null;
-      if (memberRef) {
-        if (mongoose.isValidObjectId(memberRef)) {
-          member = await Member.findById(memberRef);
-        }
-        if (!member) {
-          member = await Member.findOne({ id: String(memberRef).trim() });
-        }
-      }
-      if (!member && studentIdValue) {
-        member = await Member.findOne({ studentId: String(studentIdValue).trim() });
-      }
-      if (!member && attendance.memberName) {
-        member = await Member.findOne({ name: String(attendance.memberName).trim() });
-      }
-      if (!member) {
-        warnings.push(`Member not found for attendance record ${attendance.attendanceId || attendance._id} (${memberRef || studentIdValue || attendance.memberName}).`);
-        processedCount.skipped += 1;
-        continue;
-      }
-
-      let eventDoc = null;
-      const eventRef = getAttendanceField(attendance, 'event', 'eventId', 'event_id');
-      if (eventRef) {
-        let eventIdQuery = eventRef;
-        if (typeof eventRef === 'string') {
-          eventIdQuery = mongoose.isValidObjectId(eventRef) ? new mongoose.Types.ObjectId(eventRef) : eventRef;
-        }
-        try {
-          eventDoc = await mongoose.connection.db.collection('events-data').findOne({ _id: eventIdQuery });
-        } catch (err) {
-          console.warn(`Failed to fetch event document ${eventRef}:`, err.message);
-        }
-      }
-
-      const eventTitle = eventDoc ? eventDoc.title : '';
-      const recordEventType = eventDoc ? eventDoc.type : getAttendanceField(attendance, 'eventType', 'event_type', 'type');
-      const useType = validEventTypes.includes(recordEventType) ? recordEventType : 'meeting';
-      const fineAmount = 100;
-      const eventLabel = buildEventLabel(useType);
-      const descriptionValue = eventTitle || getAttendanceField(attendance, 'description', 'notes', 'detail') || '';
-      const eventName = `Unexcused Absence - ${eventLabel}${descriptionValue ? ` (${descriptionValue})` : ''}`;
-
-      member.balance += fineAmount;
-      memberSaves.push(member.save());
-
-      sanctionCreates.push(sanctionCollection.insertOne(buildSanctionDoc({
-        attendance,
-        member,
-        fineAmount,
-        eventName,
-        eventTitle,
-        resolvedEventType: useType
-      })));
-
-      attendanceUpdates.push(
-        attendanceCollection.updateOne(
-          { _id: attendance._id },
-          {
-            $set: {
-              processed: true,
-              processedAt: getFormattedDate(),
-              memberId: member.id
-            }
-          }
-        )
-      );
-      processedCount.success += 1;
-    }
-
-    await Promise.all([...memberSaves, ...sanctionCreates, ...attendanceUpdates]);
+    const result = await syncAttendanceAbsencesToSanctions({ fromDate, toDate, status: undefined, eventType, markProcessed: true });
     const state = await getState();
 
     res.json({
       message: 'Processed attendance absences into sanctions.',
-      processed: processedCount.success,
-      skipped: processedCount.skipped,
-      warnings,
+      processed: result.processed,
+      skipped: result.skipped,
+      deleted: result.deleted,
+      warnings: result.warnings,
       state
     });
   } catch (error) {
