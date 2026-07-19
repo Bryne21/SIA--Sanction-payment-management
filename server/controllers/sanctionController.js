@@ -39,6 +39,63 @@ const buildEventLabel = (type) => {
   return 'Meeting';
 };
 
+const normalizeEventTypeLabel = (value) => {
+  if (value === undefined || value === null || value === '') return '';
+
+  const normalized = String(value).trim().toLowerCase().replace(/[_-]+/g, ' ');
+  const mapping = {
+    'major event': 'Major Event',
+    'special event': 'Special Event',
+    meeting: 'Meeting',
+    seminar: 'Seminar',
+    webinar: 'Webinar',
+    workshop: 'Workshop',
+    sports: 'Sports',
+    social: 'Social',
+    other: 'Other'
+  };
+
+  if (mapping[normalized]) return mapping[normalized];
+
+  return normalized
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+
+const getEventOptions = async () => {
+  const options = { titles: [], types: [] };
+
+  if (mongoose.connection.readyState !== 1) {
+    return options;
+  }
+
+  try {
+    const eventDocs = await mongoose.connection.db.collection('events-data').find({}).project({ title: 1, type: 1 }).toArray();
+    const seenTitles = new Set();
+    const seenTypes = new Set();
+
+    eventDocs.forEach((doc) => {
+      const title = String(doc.title || '').trim();
+      if (title && !seenTitles.has(title)) {
+        seenTitles.add(title);
+        options.titles.push(title);
+      }
+
+      const typeLabel = normalizeEventTypeLabel(doc.type);
+      if (typeLabel && !seenTypes.has(typeLabel)) {
+        seenTypes.add(typeLabel);
+        options.types.push(typeLabel);
+      }
+    });
+  } catch (error) {
+    console.warn('Unable to read event options from events-data collection:', error.message);
+  }
+
+  return options;
+};
+
 const normalizeString = (value) => {
   if (value === undefined || value === null) return '';
   return String(value).trim().toLowerCase();
@@ -275,9 +332,11 @@ const getState = async () => {
         ...s,
         id: _id.toString()
       }));
+      const eventOptions = await getEventOptions();
       return {
         members: cleanMembers,
-        sanctions: cleanSanctions
+        sanctions: cleanSanctions,
+        eventOptions
       };
     }
   } catch (err) {
@@ -293,18 +352,22 @@ const getState = async () => {
     if (fs.existsSync(DB_PATH)) {
       const raw = fs.readFileSync(DB_PATH, 'utf8');
       const parsed = JSON.parse(raw);
+      const eventOptions = await getEventOptions();
       return {
         members: parsed.members || [],
-        sanctions: parsed.sanctions || []
+        sanctions: parsed.sanctions || [],
+        eventOptions
       };
     }
   } catch (fileErr) {
     console.error('getState: failed to read fallback data.json', fileErr);
   }
 
+  const eventOptions = await getEventOptions();
   return {
     members: [],
-    sanctions: []
+    sanctions: [],
+    eventOptions
   };
 };
 

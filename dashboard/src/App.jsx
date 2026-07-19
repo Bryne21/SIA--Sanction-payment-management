@@ -59,12 +59,14 @@ const theme = createTheme({
 
 function App() {
   const [sanctions, setSanctions] = useState([]);
+  const [eventOptions, setEventOptions] = useState({ titles: [], types: [] });
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
 
   const syncState = () => {
     getState()
       .then(res => {
         setSanctions(res.data.sanctions || []);
+        setEventOptions(res.data.eventOptions || { titles: [], types: [] });
       })
       .catch(err => {
         console.error(err);
@@ -125,7 +127,7 @@ function App() {
             </Alert>
           )}
 
-          <SanctionsList sanctions={sanctions} />
+          <SanctionsList sanctions={sanctions} eventOptions={eventOptions} />
         </Container>
       </Box>
     </ThemeProvider>

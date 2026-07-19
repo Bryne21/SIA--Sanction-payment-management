@@ -21,22 +21,80 @@ import {
   Stack
 } from '@mui/material';
 
-function SanctionsList({ sanctions }) {
+function SanctionsList({ sanctions, eventOptions = {} }) {
   const [search, setSearch] = useState('');
   const [eventFilter, setEventFilter] = useState('all');
+  const [specificEventFilter, setSpecificEventFilter] = useState('all');
   const [page, setPage] = useState(1);
+  const [paidStatus, setPaidStatus] = useState({});
   const itemsPerPage = 6;
 
+  const normalizeEventTypeLabel = (value) => {
+    if (value === undefined || value === null || value === '') return '';
+
+    const normalized = String(value).trim().toLowerCase().replace(/[_-]+/g, ' ');
+    const mapping = {
+      'major event': 'Major Event',
+      'special event': 'Special Event',
+      meeting: 'Meeting',
+      seminar: 'Seminar',
+      webinar: 'Webinar',
+      workshop: 'Workshop',
+      sports: 'Sports',
+      social: 'Social',
+      other: 'Other'
+    };
+
+    if (mapping[normalized]) return mapping[normalized];
+
+    return normalized
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
   const getEventCategory = (record) => {
+    const explicitType = normalizeEventTypeLabel(record?.eventType || record?.type || record?.event?.type || '');
+    if (explicitType) return explicitType;
+
     const text = `${record.description || ''} ${record.event || ''}`.toLowerCase();
     if (text.includes('seminar') || text.includes('jpice') || text.includes('micro seminar')) return 'Seminar';
     if (text.includes('webinar')) return 'Webinar';
     if (text.includes('workshop')) return 'Workshop';
     if (text.includes('meeting')) return 'Meeting';
     if (text.includes('sports') || text.includes('game') || text.includes('athletic')) return 'Sports';
-    if (text.includes('social') || text.includes('gathering') || text.includes('party')) return 'Social';
+    if (text.includes('social') || text.includes('gathering') || text.includes('party') || text.includes('ava')) return 'Social';
     return 'Other';
   };
+
+  const getEventTitleValue = (record) => {
+    const raw = record?.description || record?.eventTitle || record?.event || '';
+    const title = String(raw).trim();
+    if (!title) return '';
+
+    if (title.startsWith('Unexcused Absence -')) {
+      const match = title.match(/\((.+)\)$/);
+      if (match) return match[1];
+    }
+
+    return title;
+  };
+
+  const eventTypeOptions = useMemo(() => {
+    const fromCollection = Array.isArray(eventOptions?.types) ? eventOptions.types.filter(Boolean) : [];
+    const fromRecords = sanctions
+      .map((record) => getEventCategory(record))
+      .filter(Boolean);
+
+    return [...new Set([...fromCollection, ...fromRecords, 'Seminar', 'Webinar', 'Workshop', 'Meeting', 'Sports', 'Social', 'Other', 'Major Event', 'Special Event'])].sort();
+  }, [eventOptions, sanctions]);
+
+  const uniqueEvents = useMemo(() => {
+    const fromCollection = Array.isArray(eventOptions?.titles) ? eventOptions.titles.filter(Boolean) : [];
+    const fromRecords = sanctions.map((record) => getEventTitleValue(record)).filter(Boolean);
+    return [...new Set([...fromCollection, ...fromRecords, 'Unknown'])].sort();
+  }, [eventOptions, sanctions]);
 
   const uniqueMembersCount = useMemo(() => {
     const memberIds = new Set(sanctions.map(s => s.studentId || s.memberId));
@@ -61,14 +119,27 @@ function SanctionsList({ sanctions }) {
       result = result.filter(s => getEventCategory(s) === eventFilter);
     }
 
+    if (specificEventFilter !== 'all') {
+      result = result.filter(s => getEventTitleValue(s) === specificEventFilter);
+    }
+
     return result;
-  }, [sanctions, search, eventFilter]);
+  }, [sanctions, search, eventFilter, specificEventFilter]);
 
   const totalPages = Math.ceil(filteredSanctions.length / itemsPerPage);
   const paginatedSanctions = filteredSanctions.slice(
     (page - 1) * itemsPerPage,
     page * itemsPerPage
   );
+
+  const togglePaidStatus = (sanctionId) => {
+    setPaidStatus(prev => ({
+      ...prev,
+      [sanctionId]: !prev[sanctionId]
+    }));
+  };
+
+  const isPaid = (sanctionId) => paidStatus[sanctionId] || false;
 
   return (
     <Box sx={{ animation: 'fadeIn 0.3s ease-out' }}>
@@ -145,13 +216,29 @@ function SanctionsList({ sanctions }) {
                 }}
               >
                 <MenuItem value="all">All Types</MenuItem>
-                <MenuItem value="Seminar">Seminar</MenuItem>
-                <MenuItem value="Webinar">Webinar</MenuItem>
-                <MenuItem value="Workshop">Workshop</MenuItem>
-                <MenuItem value="Meeting">Meeting</MenuItem>
-                <MenuItem value="Sports">Sports</MenuItem>
-                <MenuItem value="Social">Social</MenuItem>
-                <MenuItem value="Other">Other</MenuItem>
+                {eventTypeOptions.map((typeOption) => (
+                  <MenuItem key={typeOption} value={typeOption}>
+                    {typeOption}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 180 }}>
+              <InputLabel>Event</InputLabel>
+              <Select
+                value={specificEventFilter}
+                label="Event"
+                onChange={(e) => {
+                  setSpecificEventFilter(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <MenuItem value="all">All Events</MenuItem>
+                {uniqueEvents.map((event) => (
+                  <MenuItem key={event} value={event}>
+                    {event.length > 30 ? event.substring(0, 30) + '...' : event}
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
           </Box>
@@ -217,13 +304,20 @@ function SanctionsList({ sanctions }) {
                       </TableCell>
                       <TableCell sx={{ py: 2 }}>
                         <Chip
-                          label="SANCTION"
+                          label={isPaid(s.id || s._id) ? "PAID" : "UNPAID"}
                           size="small"
+                          onClick={() => togglePaidStatus(s.id || s._id)}
                           sx={{ 
-                            backgroundColor: '#ffebee',
-                            color: '#800000',
+                            backgroundColor: isPaid(s.id || s._id) ? '#c8e6c9' : '#ffebee',
+                            color: isPaid(s.id || s._id) ? '#2e7d32' : '#800000',
                             fontWeight: 600,
-                            fontSize: '0.75rem'
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.3s ease',
+                            '&:hover': {
+                              transform: 'scale(1.05)',
+                              boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                            }
                           }}
                         />
                       </TableCell>
