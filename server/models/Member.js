@@ -16,6 +16,7 @@ const memberSchema = new mongoose.Schema(
     standing: { type: String, required: true, default: 'Good Standing' }
   },
   {
+    //SASDASD
     collection: 'members',
     timestamps: true
   }
