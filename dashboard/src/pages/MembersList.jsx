@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
+import PropTypes from 'prop-types';
 import {
   Box,
   Card,
@@ -66,35 +67,77 @@ function MembersList({ members = [], sanctions = [], eventOptions = {} }) {
     return [...preferred, ...extras];
   }, [eventOptions]);
 
-  const uniqueEvents = useMemo(() => {
-    const fromCollection = Array.isArray(eventOptions?.titles) ? eventOptions.titles.filter(Boolean) : [];
-    return [...new Set(fromCollection)].sort();
+  const normalizeForCompare = (v) => String(v || '').toLowerCase().trim();
+
+  const titleToTypeMap = useMemo(() => {
+    return eventOptions?.typeByTitle && typeof eventOptions.typeByTitle === 'object'
+      ? eventOptions.typeByTitle
+      : {};
   }, [eventOptions]);
 
+  const getEventTypeFromTitle = useCallback((title) => {
+    const titleKey = String(title || '').trim().toLowerCase();
+    return normalizeEventTypeLabel(titleToTypeMap[titleKey] || '');
+  }, [titleToTypeMap]);
+
+  const uniqueEvents = useMemo(() => {
+    const fromCollection = Array.isArray(eventOptions?.titles) ? eventOptions.titles.filter(Boolean) : [];
+    const filtered = fromCollection.filter((title) => {
+      if (eventFilter === 'all') return true;
+      return normalizeForCompare(getEventTypeFromTitle(title)) === normalizeForCompare(eventFilter);
+    });
+    return [...new Set(filtered)].sort();
+  }, [eventFilter, eventOptions, getEventTypeFromTitle]);
+
   // Filter sanctions by selected filters, then derive member ids
+
+  const getEventTypeFromSanction = useCallback((record) => {
+    const explicitType = normalizeEventTypeLabel(record?.eventType || record?.type || record?.event?.type || record?.event_type || '');
+    if (explicitType) return explicitType;
+
+    const raw = record?.description || record?.eventTitle || record?.event || '';
+    const title = String(raw).trim();
+    let eventTitle = title;
+    if (title.startsWith('Unexcused Absence -')) {
+      const match = title.match(/\((.+)\)$/);
+      if (match) eventTitle = match[1];
+    }
+
+    const titleKey = String(eventTitle || '').trim().toLowerCase();
+    const titleType = normalizeEventTypeLabel(titleToTypeMap[titleKey]);
+    if (titleType) return titleType;
+
+    const text = `${record.description || ''} ${record.event || ''}`.toLowerCase();
+    if (text.includes('seminar') || text.includes('jpice') || text.includes('micro seminar')) return 'Seminar';
+    if (text.includes('webinar')) return 'Webinar';
+    if (text.includes('workshop')) return 'Workshop';
+    if (text.includes('meeting')) return 'Meeting';
+    if (text.includes('sports') || text.includes('game') || text.includes('athletic')) return 'Sports';
+    if (text.includes('social') || text.includes('gathering') || text.includes('party') || text.includes('ava')) return 'Social';
+    return 'Other';
+  }, [titleToTypeMap]);
+
   const filteredSanctionMemberIds = useMemo(() => {
     let result = sanctions;
     if (eventFilter !== 'all') {
-      result = result.filter(s => {
-        const type = normalizeEventTypeLabel(s.eventType || s.type || s.event_type || s.type);
-        return String(type || '').toLowerCase() === String(eventFilter || '').toLowerCase();
-      });
+      result = result.filter(s => normalizeForCompare(getEventTypeFromSanction(s)) === normalizeForCompare(eventFilter));
     }
     if (specificEventFilter !== 'all') {
       result = result.filter(s => (s.event || s.description || '').toString() === specificEventFilter || (s.event || '') === specificEventFilter);
     }
     const ids = new Set(result.map(s => s.memberId || s.studentId || s.id).filter(Boolean));
     return ids;
-  }, [sanctions, eventFilter, specificEventFilter]);
+  }, [sanctions, eventFilter, specificEventFilter, getEventTypeFromSanction]);
 
   const filteredMembers = useMemo(() => {
     const q = (search || '').toLowerCase();
+    const noActiveFilters = eventFilter === 'all' && specificEventFilter === 'all';
     return members.filter(m => {
       const inSearch = !q || (m.name || '').toLowerCase().includes(q) || (m.id || '').toLowerCase().includes(q);
-      const inSanctions = filteredSanctionMemberIds.size === 0 ? true : filteredSanctionMemberIds.has(m.id || m.studentId || m._id || m.id);
+      const inSanctions = filteredSanctionMemberIds.size === 0 ? noActiveFilters : filteredSanctionMemberIds.has(m.id || m.studentId || m._id || m.id);
       return inSearch && inSanctions;
     });
-  }, [members, filteredSanctionMemberIds, search]);
+  }, [members, filteredSanctionMemberIds, search, eventFilter, specificEventFilter]);
 
   return (
     <Box sx={{ animation: 'fadeIn 0.2s ease-out' }}>
@@ -165,5 +208,15 @@ function MembersList({ members = [], sanctions = [], eventOptions = {} }) {
     </Box>
   );
 }
+
+MembersList.propTypes = {
+  members: PropTypes.array,
+  sanctions: PropTypes.array,
+  eventOptions: PropTypes.shape({
+    titles: PropTypes.array,
+    types: PropTypes.array,
+    typeByTitle: PropTypes.object
+  })
+};
 
 export default MembersList;

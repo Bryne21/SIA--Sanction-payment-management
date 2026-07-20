@@ -26,14 +26,17 @@ app.get('/', (req, res) => {
   res.json({ message: 'Sanction Payment Backend is running.' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Express Sanction Backend running on port ${PORT}`);
-});
-
-connectDB().then(async () => {
+const startServer = async () => {
+  await connectDB();
   const seedResult = await ensureSanctionSeedData();
   console.log('Sanction seed result:', seedResult);
-}).catch((error) => {
-  console.error('Startup seed failed:', error);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Express Sanction Backend running on port ${PORT}`);
+  });
+};
+
+startServer().catch((error) => {
+  console.error('Failed to start server:', error);
+  process.exit(1);
 });
 

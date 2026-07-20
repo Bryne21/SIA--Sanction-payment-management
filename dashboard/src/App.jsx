@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ThemeProvider, 
   createTheme, 
@@ -7,7 +7,6 @@ import {
   AppBar, 
   Toolbar, 
   Typography, 
-  Avatar, 
   Alert,
   Container,
   Button
@@ -66,7 +65,7 @@ function App() {
   const [view, setView] = useState('sanctions');
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
 
-  const syncState = () => {
+  const syncState = useCallback(() => {
     getState()
       .then(res => {
         setSanctions(res.data.sanctions || []);
@@ -77,11 +76,11 @@ function App() {
         console.error(err);
         showToast("Error connecting to server backend", "error");
       });
-  };
+  }, []);
 
   useEffect(() => {
     syncState();
-  }, []);
+  }, [syncState]);
 
   const showToast = (message, severity = 'success') => {
     setNotification({ open: true, message, severity });

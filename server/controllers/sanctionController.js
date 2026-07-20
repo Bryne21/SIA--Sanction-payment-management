@@ -46,9 +46,38 @@ const getFormattedDate = () => {
 };
 
 const buildEventLabel = (type) => {
-  if (type === 'major_event') return 'Major Event';
-  if (type === 'special_event') return 'Special Event';
-  return 'Meeting';
+  if (!type || typeof type !== 'string') return 'Meeting';
+  const normalized = String(type).trim().toLowerCase().replace(/[_-]+/g, ' ');
+  const mapping = {
+    'major event': 'Major Event',
+    'special event': 'Special Event',
+    meeting: 'Meeting',
+    seminar: 'Seminar',
+    webinar: 'Webinar',
+    workshop: 'Workshop',
+    sports: 'Sports',
+    social: 'Social',
+    other: 'Other'
+  };
+
+  if (mapping[normalized]) return mapping[normalized];
+
+  return normalized
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+
+const getEventsCollectionName = async () => {
+  const db = mongoose.connection.db;
+  const candidates = ['event-data', 'events-data'];
+  for (const name of candidates) {
+    if (await db.listCollections({ name }).hasNext()) {
+      return name;
+    }
+  }
+  return 'event-data';
 };
 
 const normalizeEventTypeLabel = (value) => {
@@ -76,26 +105,54 @@ const normalizeEventTypeLabel = (value) => {
     .join(' ');
 };
 
+const normalizeEventTypeCode = (value) => {
+  if (value === undefined || value === null || value === '') return '';
+
+  const normalized = String(value).trim().toLowerCase().replace(/[_\s-]+/g, '_');
+  const mapping = {
+    'major_event': 'major_event',
+    'special_event': 'special_event',
+    'meeting': 'meeting',
+    'seminar': 'seminar',
+    'webinar': 'webinar',
+    'workshop': 'workshop',
+    'sports': 'sports',
+    'social': 'social',
+    'other': 'other'
+  };
+
+  return mapping[normalized] || '';
+};
+
 const getEventOptions = async () => {
-  const options = { titles: [], types: [] };
+  const options = { titles: [], types: [], typeByTitle: {} };
 
   if (mongoose.connection.readyState !== 1) {
     return options;
   }
 
   try {
-    const eventDocs = await mongoose.connection.db.collection('events-data').find({}).project({ title: 1, type: 1 }).toArray();
+    const collectionName = await getEventsCollectionName();
+    const eventDocs = await mongoose.connection.db.collection(collectionName).find({}).project({ title: 1, type: 1 }).toArray();
     const seenTitles = new Set();
     const seenTypes = new Set();
 
     eventDocs.forEach((doc) => {
       const title = String(doc.title || '').trim();
-      if (title && !seenTitles.has(title)) {
-        seenTitles.add(title);
-        options.titles.push(title);
+      const titleKey = String(doc.title || '').trim().toLowerCase();
+      const type = String(doc.type || '').trim();
+      const typeCode = normalizeEventTypeCode(type);
+      if (title) {
+        if (!seenTitles.has(title)) {
+          seenTitles.add(title);
+          options.titles.push(title);
+        }
+        if (typeCode) {
+          options.typeByTitle[titleKey] = typeCode;
+        }
       }
 
-      const typeLabel = normalizeEventTypeLabel(doc.type);
+      const typeLabel = normalizeEventTypeLabel(type);
       if (typeLabel && !seenTypes.has(typeLabel)) {
         seenTypes.add(typeLabel);
         options.types.push(typeLabel);
@@ -165,28 +222,29 @@ const ensureSanctionSeedData = async () => {
       return { inserted: 0, updated: 0, skipped: true };
     }
 
-    const existingCount = await sanctionCollection.countDocuments();
-    if (existingCount > 0) {
-      const updateResult = await sanctionCollection.updateMany(
-        {
-          $or: [
-            { paymentStatus: { $exists: false } },
-            { isPaid: { $exists: false } }
-          ]
-        },
-        {
-          $set: {
-            paymentStatus: 'unpaid',
-            isPaid: false,
-            updatedAt: new Date()
-          }
-        }
-      );
-      return { inserted: 0, updated: updateResult.modifiedCount };
-    }
-
     const syncResult = await syncAttendanceAbsencesToSanctions({ markProcessed: true });
-    return { inserted: syncResult.processed, updated: 0, deleted: syncResult.deleted, skipped: syncResult.skipped };
+    const updateResult = await sanctionCollection.updateMany(
+      {
+        $or: [
+          { paymentStatus: { $exists: false } },
+          { isPaid: { $exists: false } }
+        ]
+      },
+      {
+        $set: {
+          paymentStatus: 'unpaid',
+          isPaid: false,
+          updatedAt: new Date()
+        }
+      }
+    );
+
+    return {
+      inserted: syncResult.processed,
+      updated: syncResult.processed > 0 ? syncResult.processed : updateResult.modifiedCount,
+      deleted: syncResult.deleted,
+      skipped: syncResult.skipped
+    };
   } catch (error) {
     console.warn('Failed to ensure sanction seed data:', error.message);
     return { inserted: 0, updated: 0, error: error.message };
@@ -274,7 +332,7 @@ const isAbsentAttendance = (record, statusOverride) => {
 };
 
 const syncAttendanceAbsencesToSanctions = async ({ fromDate, toDate, status, eventType, markProcessed = true } = {}) => {
-  const validEventTypes = ['meeting', 'major_event', 'special_event'];
+  const validEventTypes = ['meeting', 'seminar', 'webinar', 'workshop', 'sports', 'social', 'other', 'major_event', 'special_event'];
 
   const filter = {};
   if (fromDate || toDate) {
@@ -309,22 +367,42 @@ const syncAttendanceAbsencesToSanctions = async ({ fromDate, toDate, status, eve
     const existingSanction = existingSanctionByKey.get(attendanceKey);
 
     let eventDoc = null;
-    const eventRef = getAttendanceField(attendance, 'event', 'eventId', 'event_id');
+    const eventRef = getAttendanceField(attendance, 'eventId', 'event_id', 'event_ref', 'eventRef', 'event');
+    const eventTitleCandidate = getAttendanceField(attendance, 'eventTitle', 'title');
+    const eventsCollectionName = await getEventsCollectionName();
+    const eventsCollection = mongoose.connection.db.collection(eventsCollectionName);
+
     if (eventRef) {
-      let eventIdQuery = eventRef;
-      if (typeof eventRef === 'string') {
-        eventIdQuery = mongoose.isValidObjectId(eventRef) ? new mongoose.Types.ObjectId(eventRef) : eventRef;
+      let eventQuery = null;
+      if (typeof eventRef === 'string' && mongoose.isValidObjectId(eventRef)) {
+        eventQuery = { _id: new mongoose.Types.ObjectId(eventRef) };
+      } else if (typeof eventRef === 'string') {
+        eventQuery = { title: eventRef };
+      } else {
+        eventQuery = { _id: eventRef };
       }
+
       try {
-        eventDoc = await mongoose.connection.db.collection('events-data').findOne({ _id: eventIdQuery });
+        if (eventQuery) {
+          eventDoc = await eventsCollection.findOne(eventQuery);
+        }
       } catch (err) {
         console.warn(`Failed to fetch event document ${eventRef}:`, err.message);
       }
     }
 
-    const eventTitle = eventDoc ? eventDoc.title : '';
+    if (!eventDoc && typeof eventTitleCandidate === 'string' && eventTitleCandidate.trim()) {
+      try {
+        eventDoc = await eventsCollection.findOne({ title: eventTitleCandidate });
+      } catch (err) {
+        console.warn(`Failed to fetch event document by title ${eventTitleCandidate}:`, err.message);
+      }
+    }
+
+    const eventTitle = eventDoc ? eventDoc.title : String(eventTitleCandidate || '').trim();
     const recordEventType = eventDoc ? eventDoc.type : getAttendanceField(attendance, 'eventType', 'event_type', 'type');
-    const useType = eventType || (validEventTypes.includes(recordEventType) ? recordEventType : 'meeting');
+    const normalizedRecordEventType = normalizeEventTypeCode(recordEventType);
+    const useType = eventType || (validEventTypes.includes(normalizedRecordEventType) ? normalizedRecordEventType : 'meeting');
     const fineAmount = 100;
     const eventLabel = buildEventLabel(useType);
     const descriptionValue = eventTitle || getAttendanceField(attendance, 'description', 'notes', 'detail') || '';
@@ -646,7 +724,7 @@ const handleUpdateSanctionPaymentStatus = async (req, res) => {
 
 const handleProcessAttendance = async (req, res) => {
   const { fromDate, toDate, eventType } = req.body || {};
-  const validEventTypes = ['meeting', 'major_event', 'special_event'];
+  const validEventTypes = ['meeting', 'seminar', 'webinar', 'workshop', 'sports', 'social', 'other', 'major_event', 'special_event'];
 
   try {
     const filter = {};

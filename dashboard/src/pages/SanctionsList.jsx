@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
+import PropTypes from 'prop-types';
 import apiClient from '../api/client';
 import {
   Box,
@@ -58,9 +59,31 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
 
   const normalizeForCompare = (v) => String(v || '').toLowerCase().trim();
 
-  const getEventCategory = (record) => {
-    const explicitType = normalizeEventTypeLabel(record?.eventType || record?.type || record?.event?.type || '');
+  const titleToTypeMap = useMemo(() => {
+    return eventOptions?.typeByTitle && typeof eventOptions.typeByTitle === 'object'
+      ? eventOptions.typeByTitle
+      : {};
+  }, [eventOptions]);
+
+  const getEventTitleValue = useCallback((record) => {
+    const raw = record?.eventTitle || record?.description || record?.event || '';
+    let title = String(raw).trim();
+    if (!title) return '';
+
+    title = title.replace(/^Unexcused Absence\s*-\s*/i, '').trim();
+    return title;
+  }, []);
+
+  const getEventTypeFromRecord = useCallback((record) => {
+    const explicitType = normalizeEventTypeLabel(record?.eventType || record?.type || record?.event?.type || record?.event_type || '');
     if (explicitType) return explicitType;
+
+    const eventTitle = getEventTitleValue(record);
+    if (eventTitle) {
+      const titleKey = String(eventTitle).trim().toLowerCase();
+      const titleType = normalizeEventTypeLabel(titleToTypeMap[titleKey]);
+      if (titleType) return titleType;
+    }
 
     const text = `${record.description || ''} ${record.event || ''}`.toLowerCase();
     if (text.includes('seminar') || text.includes('jpice') || text.includes('micro seminar')) return 'Seminar';
@@ -70,24 +93,10 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
     if (text.includes('sports') || text.includes('game') || text.includes('athletic')) return 'Sports';
     if (text.includes('social') || text.includes('gathering') || text.includes('party') || text.includes('ava')) return 'Social';
     return 'Other';
-  };
-
-  const getEventTitleValue = (record) => {
-    const raw = record?.description || record?.eventTitle || record?.event || '';
-    const title = String(raw).trim();
-    if (!title) return '';
-
-    if (title.startsWith('Unexcused Absence -')) {
-      const match = title.match(/\((.+)\)$/);
-      if (match) return match[1];
-    }
-
-    return title;
-  };
+  }, [getEventTitleValue, titleToTypeMap]);
 
   const eventTypeOptions = useMemo(() => {
     // Preferred display order matching screenshot
-    // Order should match screenshot: Seminar, Webinar, Workshop, Meeting, Sports, Social, Other
     const preferred = [
       'Seminar',
       'Webinar',
@@ -97,22 +106,23 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
       'Social',
       'Other'
     ];
-    // Start with types found in events-data (normalized to display labels).
-    // Order them according to `preferred`, and append any extra types afterwards.
     const fromCollection = Array.isArray(eventOptions?.types) ? eventOptions.types.map(t => normalizeEventTypeLabel(t)).filter(Boolean) : [];
     const fromSet = new Set(fromCollection);
     const preferredSet = new Set(preferred);
-    // Always show the preferred list in the dropdown (matches screenshot), then append any extra types found in data
     const extras = Array.from(fromSet).filter(t => !preferredSet.has(t)).sort();
     return [...preferred, ...extras];
-  }, [eventOptions, sanctions]);
+  }, [eventOptions]);
 
   const uniqueEvents = useMemo(() => {
-    // Only show titles that exist in the events-data collection
     const fromCollection = Array.isArray(eventOptions?.titles) ? eventOptions.titles.filter(Boolean) : [];
-    const titlesSet = new Set(fromCollection);
-    return [...titlesSet].sort();
-  }, [eventOptions, sanctions]);
+    const filtered = fromCollection.filter((title) => {
+      if (eventFilter === 'all') return true;
+      const titleKey = String(title || '').trim().toLowerCase();
+      const titleType = normalizeEventTypeLabel(titleToTypeMap[titleKey]);
+      return normalizeForCompare(titleType) === normalizeForCompare(eventFilter);
+    });
+    return [...new Set(filtered)].sort();
+  }, [eventFilter, eventOptions, titleToTypeMap]);
 
   
 
@@ -120,11 +130,6 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
     const raw = record?.paymentStatus || record?.payment_status || (record?.isPaid ? 'paid' : 'unpaid');
     return String(raw).toLowerCase() === 'paid' ? 'paid' : 'unpaid';
   };
-
-  const uniqueMembersCount = useMemo(() => {
-    const memberIds = new Set(sanctions.map(s => s.studentId || s.memberId));
-    return memberIds.size;
-  }, [sanctions]);
 
   const unpaidSanctionsCount = useMemo(() => {
     return sanctions.filter((sanction) => getPaymentStatus(sanction) === 'unpaid').length;
@@ -155,7 +160,7 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
     }
 
     if (eventFilter !== 'all') {
-      result = result.filter(s => normalizeForCompare(getEventCategory(s)) === normalizeForCompare(eventFilter));
+      result = result.filter(s => normalizeForCompare(getEventTypeFromRecord(s)) === normalizeForCompare(eventFilter));
     }
 
     if (specificEventFilter !== 'all') {
@@ -163,7 +168,7 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
     }
 
     return result;
-  }, [sanctions, search, eventFilter, specificEventFilter]);
+  }, [sanctions, search, eventFilter, specificEventFilter, getEventTypeFromRecord, getEventTitleValue]);
 
   const totalPages = Math.ceil(filteredSanctions.length / itemsPerPage);
   const paginatedSanctions = filteredSanctions.slice(
@@ -329,7 +334,6 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
               <TableBody>
                 {paginatedSanctions.map((s) => {
                   const mName = s.memberName || s.name || 'Unnamed Member';
-                  const eventCategory = getEventCategory(s);
                   return (
                     <TableRow key={s.id || s._id} hover sx={{ '&:hover': { backgroundColor: '#f9f9f9' } }}>
                       <TableCell sx={{ py: 2, color: '#555555', fontWeight: 600 }}>
@@ -356,7 +360,7 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
                         <Typography variant="body2" sx={{ fontWeight: 600 }}>{getEventTitleValue(s) || 'Unknown Event'}</Typography>
                       </TableCell>
                       <TableCell sx={{ py: 2, color: '#555555' }}>
-                        <Chip label={getEventCategory(s)} size="small" sx={{ fontWeight: 700, backgroundColor: '#f5f5f5' }} />
+                        <Chip label={getEventTypeFromRecord(s)} size="small" sx={{ fontWeight: 700, backgroundColor: '#f5f5f5' }} />
                       </TableCell>
                       <TableCell sx={{ py: 2, fontWeight: 700, color: '#800000' }}>
                         ₱{s.amount || 100}
@@ -446,5 +450,15 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
     </Box>
   );
 }
+
+SanctionsList.propTypes = {
+  sanctions: PropTypes.array,
+  eventOptions: PropTypes.shape({
+    titles: PropTypes.array,
+    types: PropTypes.array,
+    typeByTitle: PropTypes.object
+  }),
+  onSanctionsChange: PropTypes.func
+};
 
 export default SanctionsList;
