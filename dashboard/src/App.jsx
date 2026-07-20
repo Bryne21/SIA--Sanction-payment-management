@@ -109,6 +109,24 @@ function App() {
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Button onClick={() => setView('sanctions')} variant={view === 'sanctions' ? 'contained' : 'text'} size="small">Sanctions</Button>
                 <Button onClick={() => setView('members')} variant={view === 'members' ? 'contained' : 'text'} size="small">Members</Button>
+                <Button 
+                  href="https://school-organization-management-ecos.vercel.app/dashboard"
+                  variant="outlined"
+                  size="small"
+                  sx={{ 
+                    borderRadius: 2,
+                    fontWeight: 600,
+                    textTransform: 'none',
+                    borderColor: 'primary.main',
+                    color: 'primary.main',
+                    '&:hover': {
+                      borderColor: 'primary.dark',
+                      backgroundColor: 'rgba(128, 0, 0, 0.04)'
+                    }
+                  }}
+                >
+                  Back
+                </Button>
               </Box>
             </Toolbar>
           </Container>
