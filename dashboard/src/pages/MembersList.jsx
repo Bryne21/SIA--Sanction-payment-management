@@ -163,7 +163,7 @@ function MembersList({ members = [], sanctions = [], eventOptions = {} }) {
               </Select>
             </FormControl>
             <Stack direction="row">
-              <Button size="small" onClick={() => { setEventFilter('all'); setSpecificEventFilter('all'); setSearch(''); }}>Reset</Button>
+              <Button size="small" onClick={() => { setEventFilter('all'); setSpecificEventFilter('all'); setSearch(''); }}></Button>
             </Stack>
           </Box>
         </CardContent>
@@ -188,7 +188,7 @@ function MembersList({ members = [], sanctions = [], eventOptions = {} }) {
                   <TableCell>{m.id || m.studentId || m._id}</TableCell>
                   <TableCell>
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                      <Avatar sx={{ width: 32, height: 32, bgcolor: '#800000' }}>{(displayName || 'U').split(' ').map(p => p[0]).join('').slice(0,2)}</Avatar>
+                      <Avatar sx={{ width: 32, height: 32, bgcolor: '#800000' }}>{(displayName || 'U').split(' ').map(p => p[0]).join('').slice(0, 2)}</Avatar>
                       <Typography sx={{ fontWeight: 600 }}>{displayName}</Typography>
                     </Box>
                   </TableCell>
