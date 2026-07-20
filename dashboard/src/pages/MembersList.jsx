@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import {
   Box,
@@ -22,149 +22,76 @@ import {
   Button
 } from '@mui/material';
 
-function MembersList({ members = [], sanctions = [], eventOptions = {} }) {
-  const [eventFilter, setEventFilter] = useState('all');
-  const [specificEventFilter, setSpecificEventFilter] = useState('all');
+function MembersList({ members = [], sanctions = [] }) {
+  const [organizationFilter, setOrganizationFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const itemsPerPage = 6;
 
-  const normalizeEventTypeLabel = (value) => {
+  const normalizeOrganizationValue = (value) => {
     if (value === undefined || value === null || value === '') return '';
-    const normalized = String(value).trim().toLowerCase().replace(/[_-]+/g, ' ');
-    const mapping = {
-      'major event': 'Major Event',
-      'special event': 'Special Event',
-      meeting: 'Meeting',
-      seminar: 'Seminar',
-      webinar: 'Webinar',
-      workshop: 'Workshop',
-      sports: 'Sports',
-      social: 'Social',
-      other: 'Other'
-    };
-    if (mapping[normalized]) return mapping[normalized];
-    return normalized
-      .split(' ')
-      .filter(Boolean)
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
+    return String(value).trim();
   };
 
-  const eventTypeOptions = useMemo(() => {
-    // Order should match screenshot: Seminar, Webinar, Workshop, Meeting, Sports, Social, Other
-    const preferred = [
-      'Seminar',
-      'Webinar',
-      'Workshop',
-      'Meeting',
-      'Sports',
-      'Social',
-      'Other'
-    ];
-    const fromCollection = Array.isArray(eventOptions?.types) ? eventOptions.types.map(t => normalizeEventTypeLabel(t)).filter(Boolean) : [];
-    const fromSet = new Set(fromCollection);
-    const preferredSet = new Set(preferred);
-    const extras = Array.from(fromSet).filter(t => !preferredSet.has(t)).sort();
-    return [...preferred, ...extras];
-  }, [eventOptions]);
+  const sanctionedMemberIds = useMemo(() => {
+    return new Set(
+      (Array.isArray(sanctions) ? sanctions : [])
+        .map((sanction) => sanction.memberId || sanction.studentId || sanction.member || sanction.id)
+        .filter(Boolean)
+    );
+  }, [sanctions]);
 
-  const normalizeForCompare = (v) => String(v || '').toLowerCase().trim();
-
-  const titleToTypeMap = useMemo(() => {
-    return eventOptions?.typeByTitle && typeof eventOptions.typeByTitle === 'object'
-      ? eventOptions.typeByTitle
-      : {};
-  }, [eventOptions]);
-
-  const getEventTypeFromTitle = useCallback((title) => {
-    const titleKey = String(title || '').trim().toLowerCase();
-    return normalizeEventTypeLabel(titleToTypeMap[titleKey] || '');
-  }, [titleToTypeMap]);
-
-  const uniqueEvents = useMemo(() => {
-    const fromCollection = Array.isArray(eventOptions?.titles) ? eventOptions.titles.filter(Boolean) : [];
-    const filtered = fromCollection.filter((title) => {
-      if (eventFilter === 'all') return true;
-      return normalizeForCompare(getEventTypeFromTitle(title)) === normalizeForCompare(eventFilter);
-    });
-    return [...new Set(filtered)].sort();
-  }, [eventFilter, eventOptions, getEventTypeFromTitle]);
-
-  // Filter sanctions by selected filters, then derive member ids
-
-  const getEventTypeFromSanction = useCallback((record) => {
-    const explicitType = normalizeEventTypeLabel(record?.eventType || record?.type || record?.event?.type || record?.event_type || '');
-    if (explicitType) return explicitType;
-
-    const raw = record?.description || record?.eventTitle || record?.event || '';
-    const title = String(raw).trim();
-    let eventTitle = title;
-    if (title.startsWith('Unexcused Absence -')) {
-      const match = title.match(/\((.+)\)$/);
-      if (match) eventTitle = match[1];
-    }
-
-    const titleKey = String(eventTitle || '').trim().toLowerCase();
-    const titleType = normalizeEventTypeLabel(titleToTypeMap[titleKey]);
-    if (titleType) return titleType;
-
-    const text = `${record.description || ''} ${record.event || ''}`.toLowerCase();
-    if (text.includes('seminar') || text.includes('jpice') || text.includes('micro seminar')) return 'Seminar';
-    if (text.includes('webinar')) return 'Webinar';
-    if (text.includes('workshop')) return 'Workshop';
-    if (text.includes('meeting')) return 'Meeting';
-    if (text.includes('sports') || text.includes('game') || text.includes('athletic')) return 'Sports';
-    if (text.includes('social') || text.includes('gathering') || text.includes('party') || text.includes('ava')) return 'Social';
-    return 'Other';
-  }, [titleToTypeMap]);
-
-  const filteredSanctionMemberIds = useMemo(() => {
-    let result = sanctions;
-    if (eventFilter !== 'all') {
-      result = result.filter(s => normalizeForCompare(getEventTypeFromSanction(s)) === normalizeForCompare(eventFilter));
-    }
-    if (specificEventFilter !== 'all') {
-      result = result.filter(s => (s.event || s.description || '').toString() === specificEventFilter || (s.event || '') === specificEventFilter);
-    }
-    const ids = new Set(result.map(s => s.memberId || s.studentId || s.id).filter(Boolean));
-    return ids;
-  }, [sanctions, eventFilter, specificEventFilter, getEventTypeFromSanction]);
+  const organizationOptions = useMemo(() => {
+    const values = members
+      .filter((member) => sanctionedMemberIds.has(member.id || member.studentId || member._id))
+      .map((member) => normalizeOrganizationValue(member.organizationID || member.organizationId || member.organizationClub || member.organization || member.org || member.organizationName || member.orgName))
+      .filter(Boolean);
+    return [...new Set(values)].sort((a, b) => a.localeCompare(b));
+  }, [members, sanctionedMemberIds]);
 
   const filteredMembers = useMemo(() => {
-    const q = (search || '').toLowerCase();
-    const noActiveFilters = eventFilter === 'all' && specificEventFilter === 'all';
-    return members.filter(m => {
-      const inSearch = !q || (m.name || '').toLowerCase().includes(q) || (m.id || '').toLowerCase().includes(q);
-      const inSanctions = filteredSanctionMemberIds.size === 0 ? noActiveFilters : filteredSanctionMemberIds.has(m.id || m.studentId || m._id || m.id);
-      return inSearch && inSanctions;
+    const query = (search || '').toLowerCase();
+
+    return members.filter((member) => {
+      const memberKey = member.id || member.studentId || member._id;
+      const isSanctioned = sanctionedMemberIds.has(memberKey);
+      if (!isSanctioned) return false;
+
+      const displayName = member.name || [member.firstName, member.lastName].filter(Boolean).join(' ') || 'Unnamed';
+      const organization = normalizeOrganizationValue(member.organizationID || member.organizationId || member.organizationClub || member.organization || member.org || member.organizationName || member.orgName);
+      const matchesSearch = !query || displayName.toLowerCase().includes(query) || String(member.id || member.studentId || member._id || '').toLowerCase().includes(query) || String(member.course || '').toLowerCase().includes(query) || organization.toLowerCase().includes(query);
+      const matchesOrganization = organizationFilter === 'all' || organization === organizationFilter;
+      return matchesSearch && matchesOrganization;
     });
-  }, [members, filteredSanctionMemberIds, search, eventFilter, specificEventFilter]);
+  }, [members, organizationFilter, sanctionedMemberIds, search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [organizationFilter, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredMembers.length / itemsPerPage));
+  const paginatedMembers = filteredMembers.slice((page - 1) * itemsPerPage, page * itemsPerPage);
 
   return (
     <Box sx={{ animation: 'fadeIn 0.2s ease-out' }}>
       <Card sx={{ mb: 3 }}>
         <CardContent>
           <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Members</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Filter members by event type or event.</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Filter members by organization.</Typography>
 
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <TextField size="small" placeholder="Search members" value={search} onChange={(e) => setSearch(e.target.value)} sx={{ minWidth: 220 }} />
-            <FormControl size="small" sx={{ minWidth: 180 }}>
-              <InputLabel>Event Type</InputLabel>
-              <Select value={eventFilter} label="Event Type" onChange={(e) => setEventFilter(e.target.value)}>
-                <MenuItem value="all">All Types</MenuItem>
-                {eventTypeOptions.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
-              </Select>
-            </FormControl>
             <FormControl size="small" sx={{ minWidth: 220 }}>
-              <InputLabel>Event</InputLabel>
-              <Select value={specificEventFilter} label="Event" onChange={(e) => setSpecificEventFilter(e.target.value)}>
-                <MenuItem value="all">All Events</MenuItem>
-                {uniqueEvents.map(ev => <MenuItem key={ev} value={ev}>{ev.length > 40 ? ev.substring(0, 40) + '...' : ev}</MenuItem>)}
+              <InputLabel>Organization</InputLabel>
+              <Select value={organizationFilter} label="Organization" onChange={(e) => setOrganizationFilter(e.target.value)}>
+                <MenuItem value="all">All Organizations</MenuItem>
+                {organizationOptions.map((organization) => (
+                  <MenuItem key={organization} value={organization}>
+                    {organization}
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
-            <Stack direction="row">
-              <Button size="small" onClick={() => { setEventFilter('all'); setSpecificEventFilter('all'); setSearch(''); }}></Button>
-            </Stack>
           </Box>
         </CardContent>
       </Card>
@@ -176,58 +103,90 @@ function MembersList({ members = [], sanctions = [], eventOptions = {} }) {
               <TableCell sx={{ fontWeight: 700 }}>Member ID</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>Name</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>Course</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>Organization</TableCell>
               <TableCell sx={{ fontWeight: 700, textAlign: 'center' }}>Balance</TableCell>
-              <TableCell sx={{ fontWeight: 700, textAlign: 'center' }}>Sanctions Count</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {filteredMembers.map(m => {
-              const sanctionsCount = sanctions.filter(s => (s.memberId === m.id || s.studentId === m.id || s.memberId === m.studentId)).length;
-              const displayName = m.name || [m.firstName, m.lastName].filter(Boolean).join(' ') || 'Unnamed';
+            {paginatedMembers.map((member) => {
+              const displayName = member.name || [member.firstName, member.lastName].filter(Boolean).join(' ') || 'Unnamed';
+              const organization = normalizeOrganizationValue(member.organizationID || member.organizationId || member.organizationClub || member.organization || member.org || member.organizationName || member.orgName);
               return (
-                <TableRow key={m.id || m._id} hover>
-                  <TableCell>{m.id || m.studentId || m._id}</TableCell>
+                <TableRow key={member.id || member._id} hover>
+                  <TableCell>{member.id || member.studentId || member._id}</TableCell>
                   <TableCell>
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-                      <Avatar sx={{ width: 32, height: 32, bgcolor: '#800000' }}>{(displayName || 'U').split(' ').map(p => p[0]).join('').slice(0, 2)}</Avatar>
+                      <Avatar sx={{ width: 32, height: 32, bgcolor: '#800000' }}>{(displayName || 'U').split(' ').map((part) => part[0]).join('').slice(0, 2)}</Avatar>
                       <Typography sx={{ fontWeight: 600 }}>{displayName}</Typography>
                     </Box>
                   </TableCell>
-                  <TableCell>
-                    <Box>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {m.course || '—'}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {m.pageNumber ? `Page ${m.pageNumber}` : '—'}
-                      </Typography>
-                    </Box>
-                  </TableCell>
-                  <TableCell sx={{ textAlign: 'center' }}>₱{m.balance || 0}</TableCell>
-                  <TableCell sx={{ textAlign: 'center' }}>{sanctionsCount}</TableCell>
+                  <TableCell>{member.course || '—'}</TableCell>
+                  <TableCell>{organization || '—'}</TableCell>
+                  <TableCell sx={{ textAlign: 'center' }}>₱{member.balance || 0}</TableCell>
                 </TableRow>
               );
             })}
             {filteredMembers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>No members found.</TableCell>
+                <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>No members found.</TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </TableContainer>
+
+      {totalPages > 1 && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1, mt: 3 }}>
+          <Typography variant="body2" color="text.secondary">
+            Showing {Math.min((page - 1) * itemsPerPage + 1, filteredMembers.length)} - {Math.min(page * itemsPerPage, filteredMembers.length)} of {filteredMembers.length}
+          </Typography>
+          <Stack direction="row" spacing={1}>
+            <Button
+              size="small"
+              disabled={page === 1}
+              onClick={() => setPage(Math.max(1, page - 1))}
+              sx={{ minWidth: 32, height: 32, p: 0 }}
+            >
+              ‹
+            </Button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+              <Button
+                key={p}
+                size="small"
+                onClick={() => setPage(p)}
+                sx={{
+                  minWidth: 32,
+                  height: 32,
+                  p: 0,
+                  backgroundColor: page === p ? '#800000' : 'transparent',
+                  color: page === p ? '#ffffff' : '#1a1a1a',
+                  fontWeight: 600,
+                  '&:hover': {
+                    backgroundColor: page === p ? '#800000' : '#f5f5f5'
+                  }
+                }}
+              >
+                {p}
+              </Button>
+            ))}
+            <Button
+              size="small"
+              disabled={page === totalPages}
+              onClick={() => setPage(Math.min(totalPages, page + 1))}
+              sx={{ minWidth: 32, height: 32, p: 0 }}
+            >
+              ›
+            </Button>
+          </Stack>
+        </Box>
+      )}
     </Box>
   );
 }
 
 MembersList.propTypes = {
   members: PropTypes.array,
-  sanctions: PropTypes.array,
-  eventOptions: PropTypes.shape({
-    titles: PropTypes.array,
-    types: PropTypes.array,
-    typeByTitle: PropTypes.object
-  })
+  sanctions: PropTypes.array
 };
 
 export default MembersList;
