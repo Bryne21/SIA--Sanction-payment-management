@@ -45,6 +45,21 @@ const getFormattedDate = () => {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 };
 
+const removeLegacyMemberBalanceField = async () => {
+  if (mongoose.connection.readyState !== 1) {
+    return;
+  }
+
+  try {
+    const result = await Member.updateMany({ balance: { $exists: true } }, { $unset: { balance: '' } });
+    if (result.modifiedCount > 0) {
+      console.log(`Removed legacy balance field from ${result.modifiedCount} member document(s).`);
+    }
+  } catch (error) {
+    console.warn('Unable to remove legacy member balance field:', error.message);
+  }
+};
+
 const buildEventLabel = (type) => {
   if (!type || typeof type !== 'string') return 'Meeting';
   const normalized = String(type).trim().toLowerCase().replace(/[_-]+/g, ' ');
@@ -428,10 +443,6 @@ const syncAttendanceAbsencesToSanctions = async ({ fromDate, toDate, status, eve
         }
       ));
     } else {
-      if (member && typeof member.save === 'function' && member.balance !== undefined) {
-        member.balance += fineAmount;
-        memberSaves.push(member.save());
-      }
       writes.push(sanctionCollection.insertOne(buildSanctionDoc({
         attendance,
         member,
@@ -471,7 +482,6 @@ const syncAttendanceAbsencesToSanctions = async ({ fromDate, toDate, status, eve
     if (sanction.memberId) {
       const member = await Member.findOne({ id: sanction.memberId });
       if (member) {
-        member.balance = Math.max(0, member.balance - (sanction.amount || 100));
         memberSaves.push(member.save());
       }
     }
@@ -494,6 +504,7 @@ const getState = async () => {
       throw new Error('mongoose-not-connected');
     }
 
+    await removeLegacyMemberBalanceField();
     await syncAttendanceAbsencesToSanctions();
 
     const sanctionCollection = await getSanctionCollection();
@@ -567,18 +578,16 @@ const getState = async () => {
     if (sanctionsToDelete.length > 0) {
       const idsToDelete = sanctionsToDelete.map(s => s._id);
       await sanctionCollection.deleteMany({ _id: { $in: idsToDelete } });
-      
-      // Also decrement member balances for deleted sanctions
+
       for (const sanction of sanctionsToDelete) {
         if (sanction.memberId) {
           const member = await Member.findOne({ id: sanction.memberId });
           if (member) {
-            member.balance = Math.max(0, member.balance - (sanction.amount || 100));
             await member.save();
           }
         }
       }
-      console.log(`Reconciled database: Deleted ${sanctionsToDelete.length} stale sanctions and adjusted member balances.`);
+      console.log(`Reconciled database: Deleted ${sanctionsToDelete.length} stale sanctions.`);
       // Refresh sanctions list
       sanctions = await sanctionCollection.find().toArray();
     }
@@ -591,7 +600,8 @@ const getState = async () => {
         ...m,
         id,
         name,
-        balance: m.balance !== undefined ? m.balance : 0,
+        course: m.course || '',
+        pageNumber: m.pageNumber || '',
         totalPaid: m.totalPaid !== undefined ? m.totalPaid : 0,
         standing: m.standing || 'Good Standing'
       };
@@ -687,10 +697,8 @@ const handleUpdateSanctionPaymentStatus = async (req, res) => {
         if (member) {
           const amount = existingSanction.amount || 100;
           if (newStatus === 'paid') {
-            member.balance = Math.max(0, (member.balance || 0) - amount);
             member.totalPaid = (member.totalPaid || 0) + amount;
           } else {
-            member.balance = (member.balance || 0) + amount;
             member.totalPaid = Math.max(0, (member.totalPaid || 0) - amount);
           }
           await member.save();

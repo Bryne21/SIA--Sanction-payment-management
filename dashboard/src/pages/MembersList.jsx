@@ -175,8 +175,9 @@ function MembersList({ members = [], sanctions = [], eventOptions = {} }) {
             <TableRow sx={{ backgroundColor: '#f7f7f7' }}>
               <TableCell sx={{ fontWeight: 700 }}>Member ID</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>Name</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>Balance</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>Sanctions Count</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>Course</TableCell>
+              <TableCell sx={{ fontWeight: 700, textAlign: 'center' }}>Balance</TableCell>
+              <TableCell sx={{ fontWeight: 700, textAlign: 'center' }}>Sanctions Count</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -187,19 +188,29 @@ function MembersList({ members = [], sanctions = [], eventOptions = {} }) {
                 <TableRow key={m.id || m._id} hover>
                   <TableCell>{m.id || m.studentId || m._id}</TableCell>
                   <TableCell>
-                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
                       <Avatar sx={{ width: 32, height: 32, bgcolor: '#800000' }}>{(displayName || 'U').split(' ').map(p => p[0]).join('').slice(0, 2)}</Avatar>
                       <Typography sx={{ fontWeight: 600 }}>{displayName}</Typography>
                     </Box>
                   </TableCell>
-                  <TableCell>₱{m.balance || 0}</TableCell>
-                  <TableCell>{sanctionsCount}</TableCell>
+                  <TableCell>
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {m.course || '—'}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {m.pageNumber ? `Page ${m.pageNumber}` : '—'}
+                      </Typography>
+                    </Box>
+                  </TableCell>
+                  <TableCell sx={{ textAlign: 'center' }}>₱{m.balance || 0}</TableCell>
+                  <TableCell sx={{ textAlign: 'center' }}>{sanctionsCount}</TableCell>
                 </TableRow>
               );
             })}
             {filteredMembers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>No members found.</TableCell>
+                <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>No members found.</TableCell>
               </TableRow>
             )}
           </TableBody>

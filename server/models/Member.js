@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 // Member schema used by the controllers and frontend.
-// Fields: id, name, email, balance, totalPaid, standing
+// Fields: id, name, email, course, pageNumber, totalPaid, standing
 const memberSchema = new mongoose.Schema(
   {
     id: { type: String, required: false, unique: true, sparse: true, index: true },
@@ -11,7 +11,8 @@ const memberSchema = new mongoose.Schema(
     lastName: { type: String, required: false },
     middleName: { type: String, required: false },
     email: { type: String, required: false },
-    balance: { type: Number, required: true, default: 0 },
+    course: { type: String, required: false },
+    pageNumber: { type: String, required: false },
     totalPaid: { type: Number, required: true, default: 0 },
     standing: { type: String, required: true, default: 'Good Standing' }
   },
