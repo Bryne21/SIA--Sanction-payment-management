@@ -583,19 +583,7 @@ const getState = async () => {
       sanctions = await sanctionCollection.find().toArray();
     }
 
-    const members = await Member.find().lean();
-    const cleanMembers = (Array.isArray(members) ? members : []).map(({ _id, __v, ...m }) => {
-      const id = m.id || m.studentId || _id.toString();
-      const name = m.name || [m.firstName, m.lastName].filter(Boolean).join(' ') || 'Unnamed Member';
-      return {
-        ...m,
-        id,
-        name,
-        balance: m.balance !== undefined ? m.balance : 0,
-        totalPaid: m.totalPaid !== undefined ? m.totalPaid : 0,
-        standing: m.standing || 'Good Standing'
-      };
-    });
+ 
     const cleanSanctions = sanctions.map(({ _id, ...s }) => ({
       ...s,
       id: _id.toString(),
