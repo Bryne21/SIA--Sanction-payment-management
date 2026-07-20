@@ -14,7 +14,6 @@ import {
   TableCell,
   TableBody,
   Paper,
-  Avatar,
   Chip,
   Button,
   FormControl,
@@ -340,21 +339,9 @@ function SanctionsList({ sanctions, eventOptions = {}, onSanctionsChange }) {
                         {s.studentId || s.memberId || '-'}
                       </TableCell>
                       <TableCell sx={{ py: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                          <Avatar sx={{ 
-                            width: 32, 
-                            height: 32, 
-                            bgcolor: '#800000', 
-                            color: '#ffffff', 
-                            fontSize: '0.75rem',
-                            fontWeight: 700
-                          }}>
-                            {mName.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                          </Avatar>
-                          <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a1a' }}>
-                            {mName}
-                          </Typography>
-                        </Box>
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a1a' }}>
+                          {mName}
+                        </Typography>
                       </TableCell>
                       <TableCell sx={{ py: 2, color: '#555555' }}>
                         <Typography variant="body2" sx={{ fontWeight: 600 }}>{getEventTitleValue(s) || 'Unknown Event'}</Typography>

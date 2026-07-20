@@ -12,7 +12,6 @@ import {
   TableCell,
   TableBody,
   Paper,
-  Avatar,
   FormControl,
   InputLabel,
   Select,
@@ -115,10 +114,7 @@ function MembersList({ members = [], sanctions = [] }) {
                 <TableRow key={member.id || member._id} hover>
                   <TableCell>{member.id || member.studentId || member._id}</TableCell>
                   <TableCell>
-                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-                      <Avatar sx={{ width: 32, height: 32, bgcolor: '#800000' }}>{(displayName || 'U').split(' ').map((part) => part[0]).join('').slice(0, 2)}</Avatar>
-                      <Typography sx={{ fontWeight: 600 }}>{displayName}</Typography>
-                    </Box>
+                    <Typography sx={{ fontWeight: 600 }}>{displayName}</Typography>
                   </TableCell>
                   <TableCell>{member.course || '—'}</TableCell>
                   <TableCell>{organization || '—'}</TableCell>
